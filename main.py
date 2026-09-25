@@ -317,7 +317,7 @@ class GraphView(QWidget):
             painter.setPen(QColor("#d7dced"))
             painter.setFont(QFont("Segoe UI", 10, QFont.Bold))
             label = ", ".join(
-                f"{transition.symbol} [{transition.weight:g}]"
+                f"{transition.symbol}"
                 for transition in symbols
             )
             painter.drawText(label_position, label)
