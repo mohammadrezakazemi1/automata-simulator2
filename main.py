@@ -795,9 +795,9 @@ class MainWindow(QMainWindow):
         )
         editor_layout.addWidget(self.geditor, 1)
 
-        input_label = QLabel()
-        input_label.setObjectName("grammar_input_label")
-        editor_layout.addWidget(input_label)
+        self.grammar_input_label = QLabel()
+        self.grammar_input_label.setObjectName("grammar_input_label")
+        editor_layout.addWidget(self.grammar_input_label)
 
         self.ginput = QLineEdit("abb")
         self.ginput.setMinimumHeight(40)
@@ -1271,7 +1271,7 @@ class MainWindow(QMainWindow):
         for key, button in self.nav_buttons:
             button.setText(self.tr(key))
 
-        self.lang_btn.setText("فارسی / English")
+        self.lang_btn.setText("English → فارسی" if self.lang == "en" else "فارسی → English")
 
         self.dtitle.setText(self.tr("designer"))
         self.stitle.setText(self.tr("simulator"))
@@ -1386,9 +1386,15 @@ class MainWindow(QMainWindow):
                 (labels_fa if self.lang == "fa" else labels_en)[key]
             )
 
-        self.ginput.setPlaceholderText(
-            "رشته ورودی" if self.lang == "fa" else "Input string"
+        self.grammar_input_label.setText(
+            "رشته ورودی" if self.lang == "fa" else "Input String"
         )
+        self.ginput.setPlaceholderText(
+            "مثلاً: abb" if self.lang == "fa" else "e.g. abb"
+        )
+
+        # Localize the transition dialog language and graph hint as well.
+        self._set_edge_mode(self.edge_btn.isChecked())
 
 
 def main():
