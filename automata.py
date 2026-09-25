@@ -14,12 +14,11 @@ EPSILON = "ε"
 
 @dataclass(frozen=True)
 class Transition:
-    """A single automaton transition with an optional numeric weight."""
+    """A single automaton transition."""
 
     source: str
     symbol: str
     target: str
-    weight: float = 1.0
 
 
 class FiniteAutomaton:
@@ -61,8 +60,8 @@ class FiniteAutomaton:
         if self.start == name:
             self.start = self.states[0] if self.states else None
 
-    def add_transition(self, source: str, symbol: str, target: str, weight: float = 1.0):
-        """Add a transition, register its symbol, and store its numeric weight."""
+    def add_transition(self, source: str, symbol: str, target: str):
+        """Add a transition and register its symbol."""
         source, symbol, target = (
             source.strip(),
             symbol.strip(),
@@ -77,14 +76,7 @@ class FiniteAutomaton:
         if symbol != EPSILON and symbol not in self.alphabet:
             self.alphabet.append(symbol)
 
-        try:
-            weight = float(weight)
-        except (TypeError, ValueError):
-            raise ValueError("Transition weight must be numeric.")
-        if weight < 0:
-            raise ValueError("Transition weight cannot be negative.")
-
-        transition = Transition(source, symbol, target, weight)
+        transition = Transition(source, symbol, target)
         if transition not in self.transitions:
             self.transitions.append(transition)
 
@@ -258,7 +250,7 @@ class FiniteAutomaton:
             states=self.states[:],
             alphabet=self.alphabet[:],
             transitions=[
-                Transition(t.source, t.symbol, t.target, t.weight)
+                Transition(t.source, t.symbol, t.target)
                 for t in self.transitions
             ],
             start=self.start,
