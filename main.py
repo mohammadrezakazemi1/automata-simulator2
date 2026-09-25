@@ -8,7 +8,7 @@ the algorithms can be tested independently.
 import math
 import sys
 
-from PySide6.QtCore import QPointF, QSplitter, Qt, QTimer, Signal
+from PySide6.QtCore import QPointF, Qt, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (
     QApplication,
@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QSplitter,
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
