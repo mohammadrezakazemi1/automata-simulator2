@@ -193,21 +193,8 @@ class GraphView(QWidget):
         if not accepted or not symbol.strip():
             return
 
-        weight, accepted = QInputDialog.getDouble(
-            self,
-            "Transition Weight",
-            "Weight / وزن:",
-            1.0,
-            0.0,
-            1_000_000_000.0,
-            2,
-        )
-
-        if not accepted:
-            return
-
         try:
-            self.automaton.add_transition(source, symbol.strip(), target, weight)
+            self.automaton.add_transition(source, symbol.strip(), target)
             self.changed.emit()
         except Exception as error:
             QMessageBox.warning(self, "Transition", str(error))
@@ -1093,7 +1080,7 @@ class MainWindow(QMainWindow):
             ]
 
             lines.extend(
-                f"{t.source} --{t.symbol} [w={t.weight:g}]--> {t.target}"
+                f"{t.source} --{t.symbol} --> {t.target}"
                 for t in dfa.transitions
             )
 
