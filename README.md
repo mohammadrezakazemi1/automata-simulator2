@@ -48,7 +48,3 @@ python -m unittest discover -s tests -v
 
 **Created by Mohammadreza Kazemi — ساخته شده توسط محمدرضا کاظمی**
 
-
-## Weighted transitions
-
-Each transition can store a non-negative numeric weight. When drawing an edge, enter its symbol first and then its weight. The graph displays labels such as `0 [5]`.
