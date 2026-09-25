@@ -23,6 +23,14 @@ class AutomataTests(unittest.TestCase):
         self.assertFalse(dfa.is_deterministic() is False)
         self.assertTrue(dfa.simulate_dfa("01")[0])
 
+
+    def test_transition_weight(self):
+        a = FiniteAutomaton(["q0", "q1"], ["0"], [], "q0", {"q1"})
+        a.add_transition("q0", "0", "q1", 5.5)
+        self.assertEqual(a.transitions[0].weight, 5.5)
+        with self.assertRaises(ValueError):
+            a.add_transition("q1", "0", "q0", -1)
+
     def test_epsilon_nfa(self):
         a = FiniteAutomaton(
             ["q0","q1"], ["a"],
