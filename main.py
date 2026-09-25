@@ -617,12 +617,16 @@ class MainWindow(QMainWindow):
         self.start_btn = QPushButton()
         self.final_btn = QPushButton()
         self.delete_btn = QPushButton()
+        self.example_nfa_btn = QPushButton()
+        self.import_nfa_btn = QPushButton()
 
         self.add_btn.clicked.connect(self.create_state)
         self.edge_btn.toggled.connect(self._set_edge_mode)
         self.start_btn.clicked.connect(self.set_start)
         self.final_btn.clicked.connect(self.toggle_final)
         self.delete_btn.clicked.connect(self.delete_state)
+        self.example_nfa_btn.clicked.connect(self.load_ab_nfa_example)
+        self.import_nfa_btn.clicked.connect(self.import_nfa_text)
 
         for button in (
             self.add_btn,
@@ -630,6 +634,8 @@ class MainWindow(QMainWindow):
             self.start_btn,
             self.final_btn,
             self.delete_btn,
+            self.example_nfa_btn,
+            self.import_nfa_btn,
         ):
             toolbar_layout.addWidget(button)
 
@@ -900,6 +906,68 @@ class MainWindow(QMainWindow):
         self.machine.add_state(state)
         self.design_graph.selected = state
         self._refresh_views()
+
+    def load_ab_nfa_example(self):
+        """Load a known three-state NFA that accepts strings containing 'ab'."""
+        self.machine = FiniteAutomaton(
+            states=["q0", "q1", "q2"],
+            alphabet=["a", "b"],
+            transitions=[
+                Transition("q0", "a", "q0"),
+                Transition("q0", "a", "q1"),
+                Transition("q0", "b", "q0"),
+                Transition("q1", "b", "q2"),
+                Transition("q2", "a", "q2"),
+                Transition("q2", "b", "q2"),
+            ],
+            start="q0",
+            finals={"q2"},
+        )
+        self.current = "q0"
+        self.path = ["q0"]
+        self.input_index = 0
+        self._refresh_views()
+
+    def import_nfa_text(self):
+        """Import an automaton from a compact, copy/paste-friendly text format."""
+        example = (
+            "states=q0,q1,q2; alphabet=a,b; start=q0; finals=q2; "
+            "transitions=q0,a,q0|q0,a,q1|q0,b,q0|q1,b,q2|q2,a,q2|q2,b,q2"
+        )
+        text, accepted = QInputDialog.getText(
+            self,
+            "Import NFA" if self.lang == "en" else "ورود NFA",
+            example,
+        )
+        if not accepted or not text.strip():
+            return
+
+        try:
+            parts = {}
+            for item in text.split(";"):
+                key, value = item.strip().split("=", 1)
+                parts[key.strip().lower()] = value.strip()
+
+            states = [x.strip() for x in parts["states"].split(",") if x.strip()]
+            alphabet = [x.strip() for x in parts["alphabet"].split(",") if x.strip()]
+            start = parts["start"].strip()
+            finals = {x.strip() for x in parts.get("finals", "").split(",") if x.strip()}
+            transitions = []
+            for item in parts.get("transitions", "").split("|"):
+                values = [x.strip() for x in item.split(",")]
+                if len(values) != 3:
+                    raise ValueError("Each transition must be: source,symbol,target")
+                transitions.append(Transition(*values))
+
+            machine = FiniteAutomaton(states, alphabet, transitions, start, finals)
+            machine.validate()
+            self.machine = machine
+            self.current = machine.start
+            self.path = [machine.start]
+            self.input_index = 0
+            self._refresh_views()
+        except Exception as error:
+            QMessageBox.warning(self, "Import NFA", str(error))
 
     def set_start(self):
         """Set the selected state as the automaton start state."""
@@ -1289,6 +1357,12 @@ class MainWindow(QMainWindow):
         )
         self.delete_btn.setText(
             "حذف حالت" if self.lang == "fa" else "Delete State"
+        )
+        self.example_nfa_btn.setText(
+            "مثال NFA شامل ab" if self.lang == "fa" else "NFA Example: contains ab"
+        )
+        self.import_nfa_btn.setText(
+            "ورود NFA متنی" if self.lang == "fa" else "Import NFA from Text"
         )
 
         self.hint.setText(
