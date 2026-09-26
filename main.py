@@ -708,6 +708,10 @@ class MainWindow(QMainWindow):
         self.current_lbl = QLabel()
         self.status = QLabel()
 
+        self.run_timer = QTimer(self)
+        self.run_timer.setInterval(650)
+        self.run_timer.timeout.connect(self._run_next_step)
+
         self.run_btn.clicked.connect(self.run_simulation)
         self.step_btn.clicked.connect(self.step_simulation)
         self.reset_btn.clicked.connect(self.reset_simulation)
@@ -1109,35 +1113,90 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def run_simulation(self):
-        """Run the complete input through DFA or NFA simulation."""
+        """Run the input with a visible step-by-step graph animation."""
         try:
             text = self.input.text().strip()
+            self.machine.validate()
 
-            if self.machine.is_deterministic():
-                accepted, path = self.machine.simulate_dfa(text)
-                self.path = path
-                self.current = path[-1]
-            else:
-                accepted, path = self.machine.simulate_nfa(text)
-                self.path = [
-                    "{" + ",".join(sorted(states)) + "}"
-                    for states in path
-                ]
-                self.current = self.path[-1]
+            for symbol in text:
+                if symbol not in self.machine.alphabet:
+                    raise ValueError(
+                        f"Symbol '{symbol}' is not in the alphabet. "
+                        f"Alphabet: {{{', '.join(self.machine.alphabet)}}}"
+                    )
 
-            self.sim_graph.set_automaton(
-                self.machine,
-                self.current,
-                self.path,
+            self.run_timer.stop()
+            self.current = self.machine.start
+            self.input_index = 0
+            self.path = [self.current]
+            self.simulation_active_edges = set()
+            self._refresh_views()
+
+            if not text:
+                accepted = self.current in self.machine.finals
+                result = self.tr("accepted") if accepted else self.tr("rejected")
+                self.status.setText(f"{self.tr('result')}: {result}")
+                return
+
+            self.status.setText(
+                f"{self.tr('result')}: "
+                + ("Running…" if self.lang == "en" else "در حال اجرا…")
             )
-            result = self.tr("accepted") if accepted else self.tr("rejected")
-            self.status.setText(f"{self.tr('result')}: {result}")
-            self.path_lbl.setText(
-                f"{self.tr('path')}: {' → '.join(self.path)}"
-            )
+            self._run_next_step()
+            if self.input_index < len(text):
+                self.run_timer.start()
 
         except Exception as error:
             QMessageBox.warning(self, "Error", str(error))
+
+    def _run_next_step(self):
+        """Execute one symbol of the running animation."""
+        text = self.input.text().strip()
+        if self.input_index >= len(text):
+            self.run_timer.stop()
+            return
+
+        previous = self.current
+        symbol = text[self.input_index]
+
+        if self.machine.is_deterministic():
+            self.current = self.machine.step_dfa(previous, symbol)
+            self.path.append(self.current)
+            self.simulation_active_edges = {(previous, self.current)}
+        else:
+            previous_states = set(self._path_state_set(previous))
+            next_states = self.machine.epsilon_closure(
+                self.machine.move(previous_states, symbol)
+            )
+            self.current = "{" + ",".join(sorted(next_states)) + "}"
+            self.path.append(self.current)
+            self.simulation_active_edges = {
+                (t.source, t.target)
+                for t in self.machine.transitions
+                if t.symbol == symbol
+                and t.source in previous_states
+                and t.target in next_states
+            }
+
+        self.input_index += 1
+        self.sim_graph.set_automaton(
+            self.machine,
+            self.current,
+            self.path,
+            self.simulation_active_edges,
+        )
+        self.current_lbl.setText(f"{self.tr('current')}: {self.current}")
+        self.path_lbl.setText(f"{self.tr('path')}: {' → '.join(self.path)}")
+
+        if self.input_index >= len(text):
+            self.run_timer.stop()
+            accepted = (
+                self.current in self.machine.finals
+                if self.machine.is_deterministic()
+                else bool(self._path_state_set(self.current) & self.machine.finals)
+            )
+            result = self.tr("accepted") if accepted else self.tr("rejected")
+            self.status.setText(f"{self.tr('result')}: {result}")
 
     def step_simulation(self):
         """Advance one input symbol and highlight the transitions used."""
