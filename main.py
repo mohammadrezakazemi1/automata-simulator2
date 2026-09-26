@@ -483,6 +483,7 @@ class MainWindow(QMainWindow):
         self.current = self.machine.start
         self.path = [self.current]
         self.input_index = 0
+        self.simulation_active_edges = set()
 
         self.grammar_text = "S -> a A\nA -> b A | ε"
 
@@ -1139,21 +1140,22 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Error", str(error))
 
     def step_simulation(self):
-        """Advance a DFA or NFA simulation by exactly one input symbol."""
+        """Advance one input symbol and highlight the transitions used."""
         try:
             text = self.input.text().strip()
 
             if self.input_index == 0:
                 self.current = self.machine.start
                 self.path = [self.current]
+                self.simulation_active_edges = set()
 
             if self.input_index >= len(text):
                 if self.machine.is_deterministic():
                     accepted = self.current in self.machine.finals
                 else:
-                    current_states = set(self._path_state_set(self.current))
-                    accepted = bool(current_states & self.machine.finals)
-
+                    accepted = bool(
+                        self._path_state_set(self.current) & self.machine.finals
+                    )
                 result = self.tr("accepted") if accepted else self.tr("rejected")
                 self.status.setText(f"{self.tr('result')}: {result}")
                 return
@@ -1165,19 +1167,27 @@ class MainWindow(QMainWindow):
                     f"Alphabet: {{{', '.join(self.machine.alphabet)}}}"
                 )
 
+            previous = self.current
+
             if self.machine.is_deterministic():
-                self.current = self.machine.step_dfa(self.current, symbol)
+                self.current = self.machine.step_dfa(previous, symbol)
                 self.path.append(self.current)
+                self.simulation_active_edges = {(previous, self.current)}
             else:
-                # For an NFA, one step moves a SET of possible states.
-                previous_states = set(self._path_state_set(self.current))
+                previous_states = set(self._path_state_set(previous))
                 next_states = self.machine.epsilon_closure(
                     self.machine.move(previous_states, symbol)
                 )
-                self.current = (
-                    "{" + ",".join(sorted(next_states)) + "}"
-                )
+                self.current = "{" + ",".join(sorted(next_states)) + "}"
                 self.path.append(self.current)
+
+                self.simulation_active_edges = {
+                    (t.source, t.target)
+                    for t in self.machine.transitions
+                    if t.symbol == symbol
+                    and t.source in previous_states
+                    and t.target in next_states
+                }
 
             self.input_index += 1
 
@@ -1185,10 +1195,23 @@ class MainWindow(QMainWindow):
                 self.machine,
                 self.current,
                 self.path,
+                self.simulation_active_edges,
             )
             self.current_lbl.setText(
                 f"{self.tr('current')}: {self.current}"
             )
+            self.path_lbl.setText(
+                f"{self.tr('path')}: {' → '.join(self.path)}"
+            )
+
+            if self.input_index >= len(text):
+                accepted = (
+                    self.current in self.machine.finals
+                    if self.machine.is_deterministic()
+                    else bool(self._path_state_set(self.current) & self.machine.finals)
+                )
+                result = self.tr("accepted") if accepted else self.tr("rejected")
+                self.status.setText(f"{self.tr('result')}: {result}")
 
         except Exception as error:
             QMessageBox.warning(self, "Error", str(error))
