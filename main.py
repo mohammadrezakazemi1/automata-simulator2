@@ -291,6 +291,7 @@ class GraphView(QWidget):
         state_radius = 34
 
         for (source, target), symbols in transition_groups.items():
+            flow_position = None
             if source not in self.positions or target not in self.positions:
                 continue
 
@@ -430,7 +431,7 @@ class GraphView(QWidget):
                 # flow_position; self-loops use the fixed loop position.
                 if source == target:
                     flow_position = QPointF(start.x(), start.y() - 70)
-                elif "flow_position" not in locals():
+                elif flow_position is None:
                     t = self.flow_t
                     flow_position = QPointF(
                         start.x() + (end.x() - start.x()) * t,
