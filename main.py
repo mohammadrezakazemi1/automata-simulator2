@@ -1143,7 +1143,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Error", str(error))
 
     def step_simulation(self):
-        """Advance a DFA simulation by exactly one input symbol."""
+        """Advance a DFA or NFA simulation by exactly one input symbol."""
         try:
             text = self.input.text().strip()
 
@@ -1152,20 +1152,38 @@ class MainWindow(QMainWindow):
                 self.path = [self.current]
 
             if self.input_index >= len(text):
-                result = (
-                    self.tr("accepted")
-                    if self.current in self.machine.finals
-                    else self.tr("rejected")
-                )
+                if self.machine.is_deterministic():
+                    accepted = self.current in self.machine.finals
+                else:
+                    current_states = set(self._path_state_set(self.current))
+                    accepted = bool(current_states & self.machine.finals)
+
+                result = self.tr("accepted") if accepted else self.tr("rejected")
                 self.status.setText(f"{self.tr('result')}: {result}")
                 return
 
-            self.current = self.machine.step_dfa(
-                self.current,
-                text[self.input_index],
-            )
+            symbol = text[self.input_index]
+            if symbol not in self.machine.alphabet:
+                raise ValueError(
+                    f"Symbol '{symbol}' is not in the alphabet. "
+                    f"Alphabet: {{{', '.join(self.machine.alphabet)}}}"
+                )
+
+            if self.machine.is_deterministic():
+                self.current = self.machine.step_dfa(self.current, symbol)
+                self.path.append(self.current)
+            else:
+                # For an NFA, one step moves a SET of possible states.
+                previous_states = set(self._path_state_set(self.current))
+                next_states = self.machine.epsilon_closure(
+                    self.machine.move(previous_states, symbol)
+                )
+                self.current = (
+                    "{" + ",".join(sorted(next_states)) + "}"
+                )
+                self.path.append(self.current)
+
             self.input_index += 1
-            self.path.append(self.current)
 
             self.sim_graph.set_automaton(
                 self.machine,
@@ -1178,6 +1196,16 @@ class MainWindow(QMainWindow):
 
         except Exception as error:
             QMessageBox.warning(self, "Error", str(error))
+
+    @staticmethod
+    def _path_state_set(value):
+        """Convert an NFA set-path label such as '{q0,q1}' to state names."""
+        if not value:
+            return set()
+        value = value.strip()
+        if value.startswith("{") and value.endswith("}"):
+            value = value[1:-1]
+        return {item.strip() for item in value.split(",") if item.strip()}
 
     def reset_simulation(self):
         """Return the simulator to the start state."""
