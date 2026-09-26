@@ -1164,7 +1164,7 @@ class MainWindow(QMainWindow):
             f"{self.tr('result')}: {self.tr('ready')}"
         )
         self.path_lbl.setText(
-            f"{self.tr('path')}: {' → '.join(self.path)}"
+            f"{self.tr('path')}: {self._format_simulation_path()}"
         )
 
     def _refresh_transition_table(self):
@@ -1342,6 +1342,7 @@ class MainWindow(QMainWindow):
                 self.current = self.machine.start
                 self.path = [self.current]
                 self.simulation_active_edges = set()
+                self.simulation_history = []
 
             if self.input_index >= len(text):
                 if self.machine.is_deterministic():
@@ -1366,7 +1367,8 @@ class MainWindow(QMainWindow):
             if self.machine.is_deterministic():
                 self.current = self.machine.step_dfa(previous, symbol)
                 self.path.append(self.current)
-                self.simulation_active_edges = {(previous, self.current)}
+                self.simulation_active_edges = {(previous, symbol, self.current)}
+                self.simulation_history.append(set(self.simulation_active_edges))
             else:
                 previous_states = set(self._path_state_set(previous))
                 next_states = self.machine.epsilon_closure(
@@ -1375,13 +1377,12 @@ class MainWindow(QMainWindow):
                 self.current = "{" + ",".join(sorted(next_states)) + "}"
                 self.path.append(self.current)
 
-                self.simulation_active_edges = {
-                    (t.source, t.target)
-                    for t in self.machine.transitions
-                    if t.symbol == symbol
-                    and t.source in previous_states
-                    and t.target in next_states
-                }
+                self.simulation_active_edges = self._exact_transitions_for_step(
+                    previous_states,
+                    symbol,
+                    next_states,
+                )
+                self.simulation_history.append(set(self.simulation_active_edges))
 
             self.input_index += 1
 
