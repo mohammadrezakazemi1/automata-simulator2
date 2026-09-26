@@ -709,10 +709,16 @@ class MainWindow(QMainWindow):
         self.step_btn = QPushButton()
         self.previous_btn = QPushButton()
         self.reset_btn = QPushButton()
+        self.duration_label = QLabel()
         self.duration_spin = QSpinBox()
-        self.duration_spin.setRange(1, 10)
+        self.duration_spin.setRange(1, 60)
         self.duration_spin.setValue(2)
         self.duration_spin.setSuffix(" s")
+        self.duration_spin.setToolTip(
+            "مدت نمایش هر مرحله را بر حسب ثانیه تنظیم کنید / "
+            "Set how long each step is displayed"
+        )
+        self.duration_spin.valueChanged.connect(self._update_run_timer)
         self.current_lbl = QLabel()
         self.status = QLabel()
 
@@ -731,6 +737,7 @@ class MainWindow(QMainWindow):
             self.run_btn,
             self.previous_btn,
             self.step_btn,
+            self.duration_label,
             self.duration_spin,
             self.reset_btn,
             self.current_lbl,
@@ -1151,10 +1158,12 @@ class MainWindow(QMainWindow):
         self.run_timer.stop()
         if self.input_index <= 0:
             return
+        previous_step_index = self.input_index - 1
+        active_edges = self._active_edges_for_step(previous_step_index)
         self.input_index -= 1
         self.current = self.path[self.input_index]
         self.path = self.path[:self.input_index + 1]
-        self.simulation_active_edges = self._active_edges_for_step(self.input_index - 1)
+        self.simulation_active_edges = active_edges
         self.sim_graph.set_automaton(
             self.machine, self.current, self.path,
             self.simulation_active_edges,
@@ -1619,7 +1628,11 @@ class MainWindow(QMainWindow):
 
         self.run_btn.setText(self.tr("run"))
         self.step_btn.setText(self.tr("step"))
+        self.previous_btn.setText(self.tr("previous"))
         self.reset_btn.setText(self.tr("reset"))
+        self.duration_label.setText(
+            "مدت هر مرحله:" if self.lang == "fa" else "Step duration:"
+        )
 
         self.convert_btn.setText(
             "تبدیل NFA به DFA"
