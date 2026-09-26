@@ -43,10 +43,11 @@ class GraphView(QWidget):
     state_clicked = Signal(str)
     changed = Signal()
 
-    def __init__(self, editable=False):
+    def __init__(self, editable=False, movable=False):
         super().__init__()
         self.automaton = None
         self.editable = editable
+        self.movable = movable
         self.positions = {}
         self.selected = None
         self.dragging = None
@@ -113,6 +114,7 @@ class GraphView(QWidget):
         """Create a new state on an empty canvas location."""
         if (
             not self.editable
+            or self.movable
             or event.button() != Qt.LeftButton
             or self._hit(event.position())
         ):
@@ -132,12 +134,15 @@ class GraphView(QWidget):
 
     def mousePressEvent(self, event):
         """Select/drag states or start drawing a transition."""
-        if not self.editable or event.button() != Qt.LeftButton:
+        if (
+            (not self.editable and not self.movable)
+            or event.button() != Qt.LeftButton
+        ):
             return
 
         state = self._hit(event.position())
 
-        if self.edge_mode:
+        if self.editable and self.edge_mode:
             if state:
                 if self.edge_source is None:
                     self.edge_source = state
@@ -158,7 +163,11 @@ class GraphView(QWidget):
 
     def mouseMoveEvent(self, event):
         """Move the selected state while dragging."""
-        if self.editable and self.dragging and not self.edge_mode:
+        if (
+            (self.editable or self.movable)
+            and self.dragging
+            and not self.edge_mode
+        ):
             self.positions[self.dragging] = event.position()
             self.update()
 
@@ -172,6 +181,7 @@ class GraphView(QWidget):
         """Delete the selected state with Delete/Backspace."""
         if (
             self.editable
+            and not self.movable
             and event.key() in (Qt.Key_Delete, Qt.Key_Backspace)
             and self.selected
         ):
@@ -735,7 +745,24 @@ class MainWindow(QMainWindow):
         self.convert_btn.clicked.connect(self.convert_nfa)
         layout.addWidget(self.convert_btn)
 
-        self.convert_graph = GraphView()
+        convert_toolbar = QFrame()
+        convert_toolbar.setStyleSheet(self.panel_style())
+        convert_toolbar_layout = QHBoxLayout(convert_toolbar)
+
+        self.convert_layout_btn = QPushButton()
+        self.convert_layout_btn.clicked.connect(self.auto_layout_converted_dfa)
+
+        self.convert_hint = QLabel()
+        self.convert_hint.setStyleSheet("color:#8793a7;padding:4px;")
+
+        convert_toolbar_layout.addWidget(self.convert_layout_btn)
+        convert_toolbar_layout.addWidget(self.convert_hint)
+        convert_toolbar_layout.addStretch()
+        layout.addWidget(convert_toolbar)
+
+        # Movable-only graph: the DFA cannot be edited here, but its states
+        # can be dragged freely to make the subset-construction result readable.
+        self.convert_graph = GraphView(movable=True)
         layout.addWidget(self.convert_graph, 1)
 
         self.convert_info = QTextEdit()
@@ -1159,12 +1186,47 @@ class MainWindow(QMainWindow):
         self.path = [self.current]
         self._refresh_views()
 
+    def auto_layout_converted_dfa(self):
+        """Arrange the converted DFA in a readable left-to-right layout."""
+        automaton = self.convert_graph.automaton
+        if not automaton or not automaton.states:
+            return
+
+        width = max(self.convert_graph.width(), 700)
+        height = max(self.convert_graph.height(), 420)
+        margin_x = 90
+        usable_width = max(width - 2 * margin_x, 420)
+
+        # Subset construction already creates states in discovery order.
+        # Keep that semantic order while distributing states across columns.
+        column_count = max(1, math.ceil(math.sqrt(len(automaton.states))))
+        columns = [
+            automaton.states[i:i + column_count]
+            for i in range(0, len(automaton.states), column_count)
+        ]
+
+        self.convert_graph.positions = {}
+        for column_index, column in enumerate(columns):
+            x = margin_x + (
+                usable_width * column_index / max(len(columns) - 1, 1)
+            )
+            if len(columns) == 1:
+                x = width / 2
+
+            spacing = height / (len(column) + 1)
+            for row_index, state in enumerate(column):
+                y = spacing * (row_index + 1)
+                self.convert_graph.positions[state] = QPointF(x, y)
+
+        self.convert_graph.update()
+
     def convert_nfa(self):
         """Convert the current NFA to a DFA using subset construction."""
         try:
             dfa = self.machine.to_dfa()
 
             self.convert_graph.set_automaton(dfa, dfa.start)
+            self.auto_layout_converted_dfa()
 
             lines = [
                 "DFA created by subset construction",
@@ -1409,6 +1471,16 @@ class MainWindow(QMainWindow):
             "تبدیل NFA به DFA"
             if self.lang == "fa"
             else "Convert NFA to DFA"
+        )
+        self.convert_layout_btn.setText(
+            "مرتب‌سازی خودکار DFA"
+            if self.lang == "fa"
+            else "Auto-layout DFA"
+        )
+        self.convert_hint.setText(
+            "حالت‌ها را با ماوس بکشید تا شکل مرتب شود"
+            if self.lang == "fa"
+            else "Drag states to arrange the graph"
         )
 
         self.gback.setText(
