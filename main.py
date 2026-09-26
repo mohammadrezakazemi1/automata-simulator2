@@ -55,6 +55,7 @@ class GraphView(QWidget):
         self.edge_source = None
         self.active = None
         self.path = []
+        self.active_edges = set()
         self.flow_t = 0.0
 
         self.setMinimumHeight(420)
@@ -65,11 +66,12 @@ class GraphView(QWidget):
         self.timer.timeout.connect(self._tick)
         self.timer.start(35)
 
-    def set_automaton(self, automaton, active=None, path=None):
+    def set_automaton(self, automaton, active=None, path=None, active_edges=None):
         """Update the graph while preserving manually positioned states."""
         self.automaton = automaton
         self.active = active
         self.path = path or []
+        self.active_edges = set(active_edges or [])
 
         old_positions = self.positions.copy()
         self.positions = {}
@@ -282,7 +284,9 @@ class GraphView(QWidget):
             key = (transition.source, transition.target)
             transition_groups.setdefault(key, []).append(transition)
 
-        active_pairs = set(zip(self.path, self.path[1:]))
+        active_pairs = set(self.active_edges)
+        if not active_pairs and self.path and self.automaton.is_deterministic():
+            active_pairs = set(zip(self.path, self.path[1:]))
         state_radius = 34
 
         for (source, target), symbols in transition_groups.items():
@@ -655,7 +659,6 @@ class MainWindow(QMainWindow):
         self.start_btn = QPushButton()
         self.final_btn = QPushButton()
         self.delete_btn = QPushButton()
-        self.example_nfa_btn = QPushButton()
         self.import_nfa_btn = QPushButton()
 
         self.add_btn.clicked.connect(self.create_state)
@@ -663,7 +666,6 @@ class MainWindow(QMainWindow):
         self.start_btn.clicked.connect(self.set_start)
         self.final_btn.clicked.connect(self.toggle_final)
         self.delete_btn.clicked.connect(self.delete_state)
-        self.example_nfa_btn.clicked.connect(self.load_ab_nfa_example)
         self.import_nfa_btn.clicked.connect(self.import_nfa_text)
 
         for button in (
@@ -672,7 +674,6 @@ class MainWindow(QMainWindow):
             self.start_btn,
             self.final_btn,
             self.delete_btn,
-            self.example_nfa_btn,
             self.import_nfa_btn,
         ):
             toolbar_layout.addWidget(button)
@@ -1055,15 +1056,10 @@ class MainWindow(QMainWindow):
         """Refresh every visible representation of the current machine."""
         self._update_texts()
 
-        self.design_graph.set_automaton(
-            self.machine,
-            self.current,
-            self.path,
-        )
+        self.design_graph.set_automaton(self.machine, self.current, self.path)
         self.sim_graph.set_automaton(
-            self.machine,
-            self.current,
-            self.path,
+            self.machine, self.current, self.path,
+            getattr(self, "simulation_active_edges", set()),
         )
 
         self._refresh_transition_table()
@@ -1476,11 +1472,8 @@ class MainWindow(QMainWindow):
         self.delete_btn.setText(
             "حذف حالت" if self.lang == "fa" else "Delete State"
         )
-        self.example_nfa_btn.setText(
-            "مثال NFA شامل ab" if self.lang == "fa" else "NFA Example: contains ab"
-        )
         self.import_nfa_btn.setText(
-            "ورود NFA متنی" if self.lang == "fa" else "Import NFA from Text"
+            "ورود ماشین متنی" if self.lang == "fa" else "Import Automaton from Text"
         )
 
         self.hint.setText(
