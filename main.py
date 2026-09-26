@@ -1263,6 +1263,7 @@ class MainWindow(QMainWindow):
             self.input_index = 0
             self.path = [self.current]
             self.simulation_active_edges = set()
+            self.simulation_history = []
             self._refresh_views()
 
             if not text:
@@ -1396,7 +1397,7 @@ class MainWindow(QMainWindow):
                 f"{self.tr('current')}: {self.current}"
             )
             self.path_lbl.setText(
-                f"{self.tr('path')}: {' → '.join(self.path)}"
+                f"{self.tr('path')}: {self._format_simulation_path()}"
             )
 
             if self.input_index >= len(text):
