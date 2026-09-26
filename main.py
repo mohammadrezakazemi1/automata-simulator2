@@ -183,7 +183,7 @@ class GraphView(QWidget):
             self.update()
 
     def _add_transition(self, source, target):
-        """Ask for a transition symbol and add the transition safely."""
+        """Add one symbol transition, with optional multiple NFA targets."""
         symbol, accepted = QInputDialog.getText(
             self,
             "Transition",
@@ -193,8 +193,36 @@ class GraphView(QWidget):
         if not accepted or not symbol.strip():
             return
 
+        # The same input symbol may lead from one NFA state to several states.
+        # Example: q0 --a--> q0,q1
+        targets_text, accepted = QInputDialog.getText(
+            self,
+            "NFA Targets",
+            "Target state(s), comma-separated:\n"
+            f"Example: {target} or q0,q1\n"
+            f"Source: {source}",
+            text=target,
+        )
+
+        if not accepted or not targets_text.strip():
+            return
+
+        targets = [
+            item.strip()
+            for item in targets_text.replace("،", ",").split(",")
+            if item.strip()
+        ]
+
+        if not targets:
+            return
+
         try:
-            self.automaton.add_transition(source, symbol.strip(), target)
+            for destination in targets:
+                self.automaton.add_transition(
+                    source,
+                    symbol.strip(),
+                    destination,
+                )
             self.changed.emit()
         except Exception as error:
             QMessageBox.warning(self, "Transition", str(error))
