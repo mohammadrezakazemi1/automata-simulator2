@@ -285,9 +285,12 @@ class GraphView(QWidget):
             key = (transition.source, transition.target)
             transition_groups.setdefault(key, []).append(transition)
 
-        active_pairs = set(self.active_edges)
-        if not active_pairs and self.path and self.automaton.is_deterministic():
-            active_pairs = set(zip(self.path, self.path[1:]))
+        active_transitions = set(self.active_edges)
+        if not active_transitions and self.path and self.automaton.is_deterministic():
+            active_transitions = {
+                (source, "", target)
+                for source, target in zip(self.path, self.path[1:])
+            }
         state_radius = 34
 
         for (source, target), symbols in transition_groups.items():
@@ -297,7 +300,12 @@ class GraphView(QWidget):
 
             start = self.positions[source]
             end = self.positions[target]
-            active = (source, target) in active_pairs
+            transition_symbols = {transition.symbol for transition in symbols}
+            active = any(
+                (source, transition_symbol, target) in active_transitions
+                or (source, "", target) in active_transitions
+                for transition_symbol in transition_symbols
+            )
 
             pen = QPen(
                 QColor("#9b8cff" if active else "#536174"),
@@ -546,6 +554,8 @@ class MainWindow(QMainWindow):
         self.path = [self.current]
         self.input_index = 0
         self.simulation_active_edges = set()
+        self.simulation_history = []
+        self.simulation_history = []
 
         self.grammar_text = "S -> a A\nA -> b A | ε"
 
@@ -1195,22 +1205,21 @@ class MainWindow(QMainWindow):
         if hasattr(self, "run_timer"):
             self.run_timer.setInterval(self.duration_spin.value() * 1000)
 
-    def _active_edges_for_step(self, index):
-        """Return transitions used by a previously executed step."""
-        if index < 0 or index + 1 >= len(self.path):
-            return set()
-        symbol = self.input.text().strip()[index]
-        if self.machine.is_deterministic():
-            return {(self.path[index], self.path[index + 1])}
-        previous_states = self._path_state_set(self.path[index])
-        next_states = self._path_state_set(self.path[index + 1])
+    def _exact_transitions_for_step(self, source_states, symbol, target_states):
+        """Return exact input-symbol transitions used by this simulation step."""
         return {
-            (t.source, t.target)
-            for t in self.machine.transitions
-            if t.symbol == symbol
-            and t.source in previous_states
-            and t.target in next_states
+            (transition.source, transition.symbol, transition.target)
+            for transition in self.machine.transitions
+            if transition.symbol == symbol
+            and transition.source in source_states
+            and transition.target in target_states
         }
+
+    def _active_edges_for_step(self, index):
+        """Return exact transitions used by a previously executed step."""
+        if index < 0 or index >= len(self.simulation_history):
+            return set()
+        return set(self.simulation_history[index])
 
     def previous_step(self):
         """Move the simulation back by one input symbol."""
@@ -1218,11 +1227,15 @@ class MainWindow(QMainWindow):
         if self.input_index <= 0:
             return
         previous_step_index = self.input_index - 1
-        active_edges = self._active_edges_for_step(previous_step_index)
         self.input_index -= 1
         self.current = self.path[self.input_index]
         self.path = self.path[:self.input_index + 1]
-        self.simulation_active_edges = active_edges
+        self.simulation_history = self.simulation_history[:self.input_index]
+        self.simulation_active_edges = (
+            self._active_edges_for_step(self.input_index - 1)
+            if self.input_index > 0
+            else set()
+        )
         self.sim_graph.set_automaton(
             self.machine, self.current, self.path,
             self.simulation_active_edges,
@@ -1282,7 +1295,8 @@ class MainWindow(QMainWindow):
         if self.machine.is_deterministic():
             self.current = self.machine.step_dfa(previous, symbol)
             self.path.append(self.current)
-            self.simulation_active_edges = {(previous, self.current)}
+            self.simulation_active_edges = {(previous, symbol, self.current)}
+            self.simulation_history.append(set(self.simulation_active_edges))
         else:
             previous_states = set(self._path_state_set(previous))
             next_states = self.machine.epsilon_closure(
@@ -1290,13 +1304,12 @@ class MainWindow(QMainWindow):
             )
             self.current = "{" + ",".join(sorted(next_states)) + "}"
             self.path.append(self.current)
-            self.simulation_active_edges = {
-                (t.source, t.target)
-                for t in self.machine.transitions
-                if t.symbol == symbol
-                and t.source in previous_states
-                and t.target in next_states
-            }
+            self.simulation_active_edges = self._exact_transitions_for_step(
+                previous_states,
+                symbol,
+                next_states,
+            )
+            self.simulation_history.append(set(self.simulation_active_edges))
 
         self.input_index += 1
         self.sim_graph.set_automaton(
@@ -1306,7 +1319,9 @@ class MainWindow(QMainWindow):
             self.simulation_active_edges,
         )
         self.current_lbl.setText(f"{self.tr('current')}: {self.current}")
-        self.path_lbl.setText(f"{self.tr('path')}: {' → '.join(self.path)}")
+        self.path_lbl.setText(
+            f"{self.tr('path')}: {self._format_simulation_path()}"
+        )
 
         if self.input_index >= len(text):
             self.run_timer.stop()
@@ -1412,10 +1427,14 @@ class MainWindow(QMainWindow):
         if len(self.path) == 1:
             return self.path[0]
 
-        symbols = self.input.text().strip()
         parts = [self.path[0]]
         for index, state in enumerate(self.path[1:]):
-            symbol = symbols[index] if index < len(symbols) else "?"
+            if index < len(self.simulation_history) and self.simulation_history[index]:
+                symbols = sorted({transition[1] for transition in self.simulation_history[index]})
+                symbol = ", ".join(symbols)
+            else:
+                input_text = self.input.text().strip()
+                symbol = input_text[index] if index < len(input_text) else "?"
             parts.append(f" --{symbol}--> {state}")
         return "".join(parts)
 
