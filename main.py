@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QSplitter,
     QStackedWidget,
     QTableWidget,
+    QSpinBox,
     QTableWidgetItem,
     QTextEdit,
     QVBoxLayout,
@@ -449,6 +450,7 @@ class MainWindow(QMainWindow):
             "ready": "آماده",
             "run": "اجرا",
             "step": "مرحله بعد",
+            "previous": "مرحله قبل",
             "reset": "بازنشانی",
             "state": "حالت",
             "path": "مسیر",
@@ -467,6 +469,7 @@ class MainWindow(QMainWindow):
             "ready": "Ready",
             "run": "Run",
             "step": "Step",
+            "previous": "Previous",
             "reset": "Reset",
             "state": "State",
             "path": "Path",
@@ -704,22 +707,31 @@ class MainWindow(QMainWindow):
         self.input = QLineEdit("0101")
         self.run_btn = QPushButton()
         self.step_btn = QPushButton()
+        self.previous_btn = QPushButton()
         self.reset_btn = QPushButton()
+        self.duration_spin = QSpinBox()
+        self.duration_spin.setRange(1, 10)
+        self.duration_spin.setValue(2)
+        self.duration_spin.setSuffix(" s")
         self.current_lbl = QLabel()
         self.status = QLabel()
 
         self.run_timer = QTimer(self)
         self.run_timer.setInterval(650)
         self.run_timer.timeout.connect(self._run_next_step)
+        self._update_run_timer()
 
         self.run_btn.clicked.connect(self.run_simulation)
         self.step_btn.clicked.connect(self.step_simulation)
+        self.previous_btn.clicked.connect(self.previous_step)
         self.reset_btn.clicked.connect(self.reset_simulation)
 
         for widget in (
             self.input,
             self.run_btn,
+            self.previous_btn,
             self.step_btn,
+            self.duration_spin,
             self.reset_btn,
             self.current_lbl,
             self.status,
@@ -1112,6 +1124,44 @@ class MainWindow(QMainWindow):
     # Automata simulation
     # ------------------------------------------------------------------
 
+    def _update_run_timer(self):
+        """Update automatic step duration."""
+        if hasattr(self, "run_timer"):
+            self.run_timer.setInterval(self.duration_spin.value() * 1000)
+
+    def _active_edges_for_step(self, index):
+        """Return transitions used by a previously executed step."""
+        if index < 0 or index + 1 >= len(self.path):
+            return set()
+        symbol = self.input.text().strip()[index]
+        if self.machine.is_deterministic():
+            return {(self.path[index], self.path[index + 1])}
+        previous_states = self._path_state_set(self.path[index])
+        next_states = self._path_state_set(self.path[index + 1])
+        return {
+            (t.source, t.target)
+            for t in self.machine.transitions
+            if t.symbol == symbol
+            and t.source in previous_states
+            and t.target in next_states
+        }
+
+    def previous_step(self):
+        """Move the simulation back by one input symbol."""
+        self.run_timer.stop()
+        if self.input_index <= 0:
+            return
+        self.input_index -= 1
+        self.current = self.path[self.input_index]
+        self.path = self.path[:self.input_index + 1]
+        self.simulation_active_edges = self._active_edges_for_step(self.input_index - 1)
+        self.sim_graph.set_automaton(
+            self.machine, self.current, self.path,
+            self.simulation_active_edges,
+        )
+        self.current_lbl.setText(f"{self.tr('current')}: {self.current}")
+        self.path_lbl.setText(f"{self.tr('path')}: {' → '.join(self.path)}")
+
     def run_simulation(self):
         """Run the input with a visible step-by-step graph animation."""
         try:
@@ -1290,6 +1340,7 @@ class MainWindow(QMainWindow):
         self.current = self.machine.start
         self.input_index = 0
         self.path = [self.current]
+        self.simulation_active_edges = set()
         self._refresh_views()
 
     def auto_layout_converted_dfa(self):
