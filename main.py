@@ -342,20 +342,79 @@ class GraphView(QWidget):
                     end.y() - uy * state_radius,
                 )
 
-                painter.drawLine(line_start, line_end)
-                self._draw_arrow(
-                    painter,
-                    line_end,
-                    QPointF(
-                        line_end.x() - ux * 12 + uy * 7,
-                        line_end.y() - uy * 12 - ux * 7,
-                    ),
-                )
+                # If both directions exist between two states, draw two
+                # separate curved arcs. Otherwise keep a clean straight edge.
+                reverse_exists = (target, source) in transition_groups
+                if reverse_exists:
+                    bend = 34
+                    normal_x, normal_y = -uy, ux
+                    direction = 1 if source < target else -1
+                    control = QPointF(
+                        (line_start.x() + line_end.x()) / 2
+                        + normal_x * bend * direction,
+                        (line_start.y() + line_end.y()) / 2
+                        + normal_y * bend * direction,
+                    )
+                    curve = QPainterPath()
+                    curve.moveTo(line_start)
+                    curve.quadTo(control, line_end)
+                    painter.drawPath(curve)
 
-                label_position = QPointF(
-                    (line_start.x() + line_end.x()) / 2 - 10,
-                    (line_start.y() + line_end.y()) / 2 - 10,
-                )
+                    # Tangent near the arrow tip.
+                    tangent = QPointF(
+                        line_end.x() - control.x(),
+                        line_end.y() - control.y(),
+                    )
+                    self._draw_arrow(
+                        painter,
+                        line_end,
+                        QPointF(
+                            line_end.x() - tangent.x() * 0.18,
+                            line_end.y() - tangent.y() * 0.18,
+                        ),
+                    )
+
+                    label_position = QPointF(
+                        0.25 * line_start.x()
+                        + 0.5 * control.x()
+                        + 0.25 * line_end.x() - 10,
+                        0.25 * line_start.y()
+                        + 0.5 * control.y()
+                        + 0.25 * line_end.y() - 10,
+                    )
+
+                    if active:
+                        t = self.flow_t
+                        flow_position = QPointF(
+                            (1 - t) * (1 - t) * line_start.x()
+                            + 2 * (1 - t) * t * control.x()
+                            + t * t * line_end.x(),
+                            (1 - t) * (1 - t) * line_start.y()
+                            + 2 * (1 - t) * t * control.y()
+                            + t * t * line_end.y(),
+                        )
+                else:
+                    painter.drawLine(line_start, line_end)
+                    self._draw_arrow(
+                        painter,
+                        line_end,
+                        QPointF(
+                            line_end.x() - ux * 12 + uy * 7,
+                            line_end.y() - uy * 12 - ux * 7,
+                        ),
+                    )
+
+                    label_position = QPointF(
+                        (line_start.x() + line_end.x()) / 2 - 10,
+                        (line_start.y() + line_end.y()) / 2 - 10,
+                    )
+
+                    if active:
+                        t = self.flow_t
+                        flow_position = QPointF(
+                            line_start.x() + (line_end.x() - line_start.x()) * t,
+                            line_start.y() + (line_end.y() - line_start.y()) * t,
+                        )
 
             painter.setPen(QColor("#d7dced"))
             painter.setFont(QFont("Segoe UI", 10, QFont.Bold))
@@ -367,13 +426,12 @@ class GraphView(QWidget):
 
             if active:
                 # Animated dot shows the direction of the current transition.
-                t = self.flow_t
+                # Curved bidirectional edges already calculate their own
+                # flow_position; self-loops use the fixed loop position.
                 if source == target:
-                    flow_position = QPointF(
-                        start.x(),
-                        start.y() - 70,
-                    )
-                else:
+                    flow_position = QPointF(start.x(), start.y() - 70)
+                elif "flow_position" not in locals():
+                    t = self.flow_t
                     flow_position = QPointF(
                         start.x() + (end.x() - start.x()) * t,
                         start.y() + (end.y() - start.y()) * t,
@@ -1169,7 +1227,9 @@ class MainWindow(QMainWindow):
             self.simulation_active_edges,
         )
         self.current_lbl.setText(f"{self.tr('current')}: {self.current}")
-        self.path_lbl.setText(f"{self.tr('path')}: {' → '.join(self.path)}")
+        self.path_lbl.setText(
+            f"{self.tr('path')}: {self._format_simulation_path()}"
+        )
 
     def run_simulation(self):
         """Run the input with a visible step-by-step graph animation."""
@@ -1343,6 +1403,20 @@ class MainWindow(QMainWindow):
         if value.startswith("{") and value.endswith("}"):
             value = value[1:-1]
         return {item.strip() for item in value.split(",") if item.strip()}
+
+    def _format_simulation_path(self):
+        """Render the exact traversed route, including input symbols."""
+        if not self.path:
+            return "—"
+        if len(self.path) == 1:
+            return self.path[0]
+
+        symbols = self.input.text().strip()
+        parts = [self.path[0]]
+        for index, state in enumerate(self.path[1:]):
+            symbol = symbols[index] if index < len(symbols) else "?"
+            parts.append(f" --{symbol}--> {state}")
+        return "".join(parts)
 
     def reset_simulation(self):
         """Return the simulator to the start state."""
