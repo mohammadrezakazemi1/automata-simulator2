@@ -15,7 +15,7 @@ Created by Mohammadreza Kazemi — ساخته شده توسط محمدرضا ک�
 - Multiple destinations for the same symbol in NFA
 - Determinism protection in DFA mode
 - Delete states and exact transitions
-- Text import and automatic DFA/NFA detection
+- Two independent DFA and NFA design workspaces
 - Transition table
 
 ### Simulator
@@ -77,3 +77,7 @@ py -3.11 -m unittest discover -s tests -v
 - New regression tests cover branching a/b NFAs and epsilon-NFA conversion.
 
 Created by Mohammadreza Kazemi — ساخته شده توسط محمدرضا کاظمی
+
+## Designer mode
+
+DFA and NFA are separate design workspaces. Switching the mode changes the editing rules and graph behavior while preserving each workspace independently. Text-based automaton import has been removed from the Designer. NFA → DFA conversion remains available only in the dedicated conversion module.
