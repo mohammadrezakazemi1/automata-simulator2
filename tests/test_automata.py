@@ -25,9 +25,13 @@ class AutomataTests(unittest.TestCase):
 
     def test_subset_construction_keeps_dead_state(self):
         a = FiniteAutomaton(
-            ["q0"], ["0", "1"],
-            [Transition("q0", "0", "q0")],
-            "q0", {"q0"}
+            ["q0", "q1"], ["0", "1"],
+            [
+                Transition("q0", "0", "q0"),
+                Transition("q0", "0", "q1"),
+                Transition("q1", "0", "q1"),
+            ],
+            "q0", {"q1"}
         )
         dfa = a.to_dfa()
         self.assertIn("∅", dfa.states)
