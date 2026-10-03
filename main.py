@@ -455,8 +455,13 @@ class MainWindow(QMainWindow):
 
         self.lang = "en"
         self._designer_mode = "DFA"
-        self.machine = self._create_empty_machine(deterministic=True)
-        self.current = self.machine.start
+        self.designer_machines = {
+            "DFA": self._create_empty_machine(),
+            "NFA": self._create_empty_machine(),
+        }
+        self.designer_positions = {"DFA": {}, "NFA": {}}
+        self.machine = self.designer_machines["DFA"]
+        self.current = None
         self.path = [self.current]
         self.input_index = 0
         self.simulation_active_edges = set()
@@ -989,29 +994,43 @@ class MainWindow(QMainWindow):
         )
 
     def set_designer_mode(self, mode):
-        """Select an independent DFA or NFA drawing workspace."""
+        """Switch between two independent DFA and NFA design workspaces."""
         mode = "NFA" if str(mode).upper() == "NFA" else "DFA"
-        self._designer_mode = mode
+        previous = getattr(self, "_designer_mode", mode)
 
-        # Mode switching intentionally starts a clean design. Conversion is
-        # kept exclusively in the NFA → DFA page.
-        self.machine = self._create_empty_machine()
-        self.current = None
-        self.path = []
+        if hasattr(self, "design_graph"):
+            self.designer_machines[previous] = self.machine
+            self.designer_positions[previous] = self.design_graph.positions.copy()
+
+        self._designer_mode = mode
+        self.machine = self.designer_machines[mode]
+        self.current = self.machine.start
+        self.path = [self.current] if self.current else []
         self.input_index = 0
         self.simulation_active_edges = set()
         self.simulation_history = []
 
         self.design_graph.set_mode(mode)
-        self.design_graph.positions.clear()
+        self.design_graph.positions = self.designer_positions[mode].copy()
         self.design_graph.selected = None
         self.design_graph.edge_source = None
         self.edge_btn.setChecked(False)
         self._refresh_views()
 
     def clear_designer(self):
-        """Clear the current design while keeping its selected mode."""
-        self.set_designer_mode(getattr(self, "_designer_mode", "DFA"))
+        """Clear only the currently selected DFA/NFA design."""
+        mode = getattr(self, "_designer_mode", "DFA")
+        self.designer_machines[mode] = self._create_empty_machine()
+        self.designer_positions[mode] = {}
+        self.machine = self.designer_machines[mode]
+        self.current = None
+        self.path = []
+        self.input_index = 0
+        self.simulation_active_edges = set()
+        self.simulation_history = []
+        self.design_graph.positions = {}
+        self.design_graph.selected = None
+        self._refresh_views()
 
 
     def _set_edge_mode(self, enabled):
@@ -1675,6 +1694,7 @@ class MainWindow(QMainWindow):
             button.setText(self.tr(key))
 
         self.lang_btn.setText("English → فارسی" if self.lang == "en" else "فارسی → English")
+        self.design_mode_label.setText("حالت طراحی" if self.lang == "fa" else "Design mode")
 
         self.dtitle.setText(self.tr("designer"))
         self.stitle.setText(self.tr("simulator"))
@@ -1737,7 +1757,6 @@ class MainWindow(QMainWindow):
         self.reset_btn.setText(self.tr("reset"))
         self.dfa_mode_btn.setText("DFA" if self.lang=="en" else "حالت DFA")
         self.nfa_mode_btn.setText("NFA" if self.lang=="en" else "حالت NFA")
-        self.designer_convert_btn.setText("NFA → DFA" if self.lang=="en" else "تبدیل NFA → DFA")
         self.convert_load_btn.setText("Load Current Machine" if self.lang=="en" else "بارگذاری ماشین فعلی")
         self.convert_btn.setText("Convert NFA → DFA" if self.lang=="en" else "تبدیل NFA → DFA")
         self.convert_layout_btn.setText("Auto-layout Both" if self.lang=="en" else "مرتب‌سازی هر دو")
