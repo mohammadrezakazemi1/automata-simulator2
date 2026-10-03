@@ -118,6 +118,10 @@ class FiniteAutomaton:
                 or transition.target not in self.states
             ):
                 raise ValueError("A transition references a missing state.")
+            if transition.symbol != EPSILON and transition.symbol not in self.alphabet:
+                raise ValueError(
+                    f"Transition symbol '{transition.symbol}' is not in the alphabet."
+                )
 
     def step_dfa(self, state: str, symbol: str) -> str:
         """Perform exactly one DFA transition."""
@@ -187,7 +191,7 @@ class FiniteAutomaton:
         """Convert an NFA/ε-NFA to a DFA using subset construction."""
         self.validate()
         if self.is_deterministic():
-            return self
+            return self.clone()
 
         start_subset = frozenset(self.epsilon_closure({self.start}))
         names = {start_subset: self._subset_name(start_subset)}
