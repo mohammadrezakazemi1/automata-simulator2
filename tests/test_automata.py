@@ -23,6 +23,18 @@ class AutomataTests(unittest.TestCase):
         self.assertFalse(dfa.is_deterministic() is False)
         self.assertTrue(dfa.simulate_dfa("01")[0])
 
+    def test_subset_construction_keeps_dead_state(self):
+        a = FiniteAutomaton(
+            ["q0"], ["0", "1"],
+            [Transition("q0", "0", "q0")],
+            "q0", {"q0"}
+        )
+        dfa = a.to_dfa()
+        self.assertIn("∅", dfa.states)
+        self.assertEqual(dfa.destinations("∅", "0"), {"∅"})
+        self.assertEqual(dfa.destinations("∅", "1"), {"∅"})
+        self.assertTrue(dfa.simulate_dfa("1")[0] is False)
+
     def test_epsilon_nfa(self):
         a = FiniteAutomaton(
             ["q0","q1"], ["a"],
