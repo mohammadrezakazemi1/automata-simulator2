@@ -49,6 +49,7 @@ class GraphView(QWidget):
         self.automaton = None
         self.editable = editable
         self.movable = movable
+        self.mode = "DFA"
         self.positions = {}
         self.selected = None
         self.dragging = None
@@ -66,6 +67,9 @@ class GraphView(QWidget):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._tick)
         self.timer.start(35)
+
+    def set_mode(self, mode):
+        self.mode = "NFA" if str(mode).upper() == "NFA" else "DFA"
 
     def set_automaton(self, automaton, active=None, path=None, active_edges=None):
         """Update the graph while preserving manually positioned states."""
@@ -228,6 +232,15 @@ class GraphView(QWidget):
 
         if not targets:
             return
+
+        if self.mode == "DFA":
+            if len(set(targets)) != 1:
+                QMessageBox.warning(self, "DFA transition", "A DFA transition must have exactly one target state.")
+                return
+            existing = {t.target for t in self.automaton.transitions if t.source == source and t.symbol == symbol.strip()}
+            if existing and existing != {targets[0]}:
+                QMessageBox.warning(self, "DFA transition", f"DFA already has a transition for ({source}, {symbol.strip()}).")
+                return
 
         try:
             for destination in targets:
@@ -555,7 +568,6 @@ class MainWindow(QMainWindow):
         self.input_index = 0
         self.simulation_active_edges = set()
         self.simulation_history = []
-        self.simulation_history = []
 
         self.grammar_text = "S -> a A\nA -> b A | ε"
 
@@ -729,31 +741,43 @@ class MainWindow(QMainWindow):
         self.add_btn = QPushButton()
         self.edge_btn = QPushButton()
         self.edge_btn.setCheckable(True)
+        self.dfa_mode_btn = QPushButton()
+        self.dfa_mode_btn.setCheckable(True)
+        self.nfa_mode_btn = QPushButton()
+        self.nfa_mode_btn.setCheckable(True)
         self.start_btn = QPushButton()
         self.final_btn = QPushButton()
         self.delete_btn = QPushButton()
         self.import_nfa_btn = QPushButton()
+        self.designer_convert_btn = QPushButton()
 
         self.add_btn.clicked.connect(self.create_state)
         self.edge_btn.toggled.connect(self._set_edge_mode)
+        self.dfa_mode_btn.clicked.connect(lambda: self.set_designer_mode("DFA"))
+        self.nfa_mode_btn.clicked.connect(lambda: self.set_designer_mode("NFA"))
         self.start_btn.clicked.connect(self.set_start)
         self.final_btn.clicked.connect(self.toggle_final)
         self.delete_btn.clicked.connect(self.delete_state)
         self.import_nfa_btn.clicked.connect(self.import_nfa_text)
+        self.designer_convert_btn.clicked.connect(self.convert_designer_machine)
 
         for button in (
             self.add_btn,
             self.edge_btn,
+            self.dfa_mode_btn,
+            self.nfa_mode_btn,
             self.start_btn,
             self.final_btn,
             self.delete_btn,
             self.import_nfa_btn,
+            self.designer_convert_btn,
         ):
             toolbar_layout.addWidget(button)
 
         layout.addWidget(toolbar)
 
         self.design_graph = GraphView(editable=True)
+        self.design_graph.set_mode("DFA")
         self.design_graph.state_clicked.connect(self._select_state)
         self.design_graph.changed.connect(self._refresh_views)
         layout.addWidget(self.design_graph, 1)
@@ -834,36 +858,55 @@ class MainWindow(QMainWindow):
 
     def _convert(self):
         page, layout, self.ctitle, self.cbadge = self._page()
+        toolbar = QFrame()
+        toolbar.setStyleSheet(self.panel_style())
+        toolbar_layout = QHBoxLayout(toolbar)
 
+        self.convert_load_btn = QPushButton()
+        self.convert_load_btn.clicked.connect(self.load_conversion_source)
         self.convert_btn = QPushButton()
         self.convert_btn.clicked.connect(self.convert_nfa)
-        layout.addWidget(self.convert_btn)
-
-        convert_toolbar = QFrame()
-        convert_toolbar.setStyleSheet(self.panel_style())
-        convert_toolbar_layout = QHBoxLayout(convert_toolbar)
-
         self.convert_layout_btn = QPushButton()
-        self.convert_layout_btn.clicked.connect(self.auto_layout_converted_dfa)
-
+        self.convert_layout_btn.clicked.connect(self.auto_layout_conversion_graphs)
         self.convert_hint = QLabel()
         self.convert_hint.setStyleSheet("color:#8793a7;padding:4px;")
 
-        convert_toolbar_layout.addWidget(self.convert_layout_btn)
-        convert_toolbar_layout.addWidget(self.convert_hint)
-        convert_toolbar_layout.addStretch()
-        layout.addWidget(convert_toolbar)
+        for widget in (self.convert_load_btn,self.convert_btn,self.convert_layout_btn,self.convert_hint):
+            toolbar_layout.addWidget(widget)
+        toolbar_layout.addStretch()
+        layout.addWidget(toolbar)
 
-        # Movable-only graph: the DFA cannot be edited here, but its states
-        # can be dragged freely to make the subset-construction result readable.
+        graphs = QSplitter(Qt.Horizontal)
+        source_panel = QFrame()
+        source_panel.setStyleSheet(self.panel_style())
+        source_layout = QVBoxLayout(source_panel)
+        self.convert_source_title = QLabel()
+        self.convert_source_title.setStyleSheet("font-size:17px;font-weight:700;color:#f8fafc;")
+        source_layout.addWidget(self.convert_source_title)
+        self.convert_source_graph = GraphView(movable=True)
+        source_layout.addWidget(self.convert_source_graph,1)
+
+        result_panel = QFrame()
+        result_panel.setStyleSheet(self.panel_style())
+        result_layout = QVBoxLayout(result_panel)
+        self.convert_result_title = QLabel()
+        self.convert_result_title.setStyleSheet("font-size:17px;font-weight:700;color:#f8fafc;")
+        result_layout.addWidget(self.convert_result_title)
         self.convert_graph = GraphView(movable=True)
-        layout.addWidget(self.convert_graph, 1)
+        result_layout.addWidget(self.convert_graph,1)
+
+        graphs.addWidget(source_panel)
+        graphs.addWidget(result_panel)
+        graphs.setSizes([520,520])
+        layout.addWidget(graphs,1)
 
         self.convert_info = QTextEdit()
         self.convert_info.setReadOnly(True)
-        self.convert_info.setMaximumHeight(170)
+        self.convert_info.setMaximumHeight(180)
         layout.addWidget(self.convert_info)
 
+        self.convert_source_graph.set_automaton(self.machine,self.machine.start)
+        self.convert_source_title.setText("Source: "+("DFA" if self.machine.is_deterministic() else "NFA"))
         return page
 
     def _grammar(self):
@@ -1033,6 +1076,108 @@ class MainWindow(QMainWindow):
     # Automata designer actions
     # ------------------------------------------------------------------
 
+    def set_designer_mode(self, mode):
+        """Switch the drawing rules between DFA and NFA."""
+        mode = "NFA" if str(mode).upper() == "NFA" else "DFA"
+        if mode == "DFA" and not self.machine.is_deterministic():
+            reply = QMessageBox.question(
+                self,"Convert NFA to DFA",
+                "The current machine is an NFA. Convert it to a DFA before switching to DFA mode?"
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                self.nfa_mode_btn.setChecked(True)
+                self.dfa_mode_btn.setChecked(False)
+                return
+            self.machine = self.machine.to_dfa()
+            self.current = self.machine.start
+            self.path = [self.current]
+            self.input_index = 0
+            self.simulation_history = []
+            self.simulation_active_edges = set()
+        self.design_graph.set_mode(mode)
+        self.dfa_mode_btn.setChecked(mode == "DFA")
+        self.nfa_mode_btn.setChecked(mode == "NFA")
+        self._refresh_views()
+
+    def convert_designer_machine(self):
+        """Convert the designed NFA to a DFA and keep it in Designer."""
+        if self.machine.is_deterministic():
+            QMessageBox.information(self,"NFA → DFA","The current machine is already a DFA.")
+            self.set_designer_mode("DFA")
+            return
+        try:
+            self.machine = self.machine.to_dfa()
+            self.current = self.machine.start
+            self.path = [self.current]
+            self.input_index = 0
+            self.simulation_history = []
+            self.simulation_active_edges = set()
+            self.design_graph.selected = None
+            self.set_designer_mode("DFA")
+        except Exception as error:
+            QMessageBox.warning(self,"Conversion",str(error))
+
+    def load_conversion_source(self):
+        """Copy the current Designer machine into the conversion workspace."""
+        self.convert_source_graph.set_automaton(self.machine,self.machine.start)
+        self.convert_source_title.setText(
+            ("Source: " if self.lang=="en" else "ورودی: ")
+            + ("DFA" if self.machine.is_deterministic() else "NFA")
+        )
+        self.convert_graph.set_automaton(None)
+        self.convert_info.clear()
+        self.auto_layout_conversion_graphs()
+
+    def _layout_graph(self, graph):
+        """Arrange a graph without changing its automaton."""
+        automaton=graph.automaton
+        if not automaton or not automaton.states:return
+        width=max(graph.width(),500); height=max(graph.height(),420)
+        margin_x=80; usable_width=max(width-2*margin_x,300)
+        column_count=max(1,math.ceil(math.sqrt(len(automaton.states))))
+        columns=[automaton.states[i:i+column_count] for i in range(0,len(automaton.states),column_count)]
+        graph.positions={}
+        for ci,column in enumerate(columns):
+            x=margin_x+usable_width*ci/max(len(columns)-1,1)
+            if len(columns)==1:x=width/2
+            spacing=height/(len(column)+1)
+            for ri,state in enumerate(column):
+                graph.positions[state]=QPointF(x,spacing*(ri+1))
+        graph.update()
+
+    def auto_layout_conversion_graphs(self):
+        self._layout_graph(self.convert_source_graph)
+        self._layout_graph(self.convert_graph)
+
+    def auto_layout_converted_dfa(self):
+        self.auto_layout_conversion_graphs()
+
+    def convert_nfa(self):
+        """Convert the source graph to a DFA using subset construction."""
+        try:
+            source=self.convert_source_graph.automaton
+            if not source:
+                self.load_conversion_source()
+                source=self.convert_source_graph.automaton
+            dfa=source.clone() if source.is_deterministic() else source.to_dfa()
+            self.convert_graph.set_automaton(dfa,dfa.start)
+            self._layout_graph(self.convert_graph)
+            lines=[
+                "Source is already a DFA; a copy is shown as the result." if source.is_deterministic() else "DFA created by subset construction.",
+                "",
+                f"States: {', '.join(dfa.states)}",
+                f"Alphabet: {', '.join(dfa.alphabet)}",
+                f"Start: {dfa.start}",
+                f"Final: {', '.join(sorted(dfa.finals)) or '—'}",
+                "",
+                "Transitions:"
+            ]
+            lines.extend(f"{t.source} --{t.symbol} --> {t.target}" for t in dfa.transitions)
+            self.convert_info.setPlainText("\n".join(lines))
+            self.convert_result_title.setText("Result: DFA" if self.lang=="en" else "خروجی: DFA")
+        except Exception as error:
+            QMessageBox.warning(self,"Conversion",str(error))
+
     def _set_edge_mode(self, enabled):
         self.design_graph.edge_mode = enabled
         self.edge_btn.setText(
@@ -1149,6 +1294,7 @@ class MainWindow(QMainWindow):
         """Refresh every visible representation of the current machine."""
         self._update_texts()
 
+        self.design_graph.set_mode("DFA" if self.machine.is_deterministic() else "NFA")
         self.design_graph.set_automaton(self.machine, self.current, self.path)
         self.sim_graph.set_automaton(
             self.machine, self.current, self.path,
@@ -1726,6 +1872,18 @@ class MainWindow(QMainWindow):
         self.step_btn.setText(self.tr("step"))
         self.previous_btn.setText(self.tr("previous"))
         self.reset_btn.setText(self.tr("reset"))
+        self.dfa_mode_btn.setText("DFA" if self.lang=="en" else "حالت DFA")
+        self.nfa_mode_btn.setText("NFA" if self.lang=="en" else "حالت NFA")
+        self.designer_convert_btn.setText("NFA → DFA" if self.lang=="en" else "تبدیل NFA → DFA")
+        self.convert_load_btn.setText("Load Current Machine" if self.lang=="en" else "بارگذاری ماشین فعلی")
+        self.convert_btn.setText("Convert NFA → DFA" if self.lang=="en" else "تبدیل NFA → DFA")
+        self.convert_layout_btn.setText("Auto-layout Both" if self.lang=="en" else "مرتب‌سازی هر دو")
+        self.convert_hint.setText("Both graphs are movable" if self.lang=="en" else "هر دو گراف قابل جابه‌جایی هستند")
+        self.convert_source_title.setText(
+            ("Source: " if self.lang=="en" else "ورودی: ")
+            + ("DFA" if self.machine.is_deterministic() else "NFA")
+        )
+        self.convert_result_title.setText("Result: DFA" if self.lang=="en" else "خروجی: DFA")
         self.duration_label.setText(
             "مدت هر مرحله:" if self.lang == "fa" else "Step duration:"
         )
