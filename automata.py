@@ -216,10 +216,8 @@ class FiniteAutomaton:
                     )
                 )
 
-                # The visualizer omits the empty/dead subset.
-                if not target_subset:
-                    continue
-
+                # Keep the empty subset as the DFA dead state so that
+                # every DFA state has a defined transition for every symbol.
                 if target_subset not in names:
                     names[target_subset] = self._subset_name(target_subset)
                     dfa_states.append(names[target_subset])
