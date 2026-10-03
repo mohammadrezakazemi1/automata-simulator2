@@ -627,6 +627,28 @@ class MainWindow(QMainWindow):
     def _designer(self):
         page, layout, self.dtitle, self.dbadge = self._page()
 
+        mode_bar = QFrame()
+        mode_bar.setStyleSheet(self.panel_style())
+        mode_layout = QHBoxLayout(mode_bar)
+
+        mode_label = QLabel()
+        mode_label.setStyleSheet("color:#f8fafc;font-weight:700;font-size:14px;")
+        self.design_mode_label = mode_label
+        mode_layout.addWidget(mode_label)
+
+        self.dfa_mode_btn = QPushButton("DFA")
+        self.nfa_mode_btn = QPushButton("NFA")
+        for button in (self.dfa_mode_btn, self.nfa_mode_btn):
+            button.setCheckable(True)
+            button.setMinimumHeight(38)
+            mode_layout.addWidget(button)
+
+        mode_layout.addStretch()
+        layout.addWidget(mode_bar)
+
+        self.dfa_mode_btn.clicked.connect(lambda: self.set_designer_mode("DFA"))
+        self.nfa_mode_btn.clicked.connect(lambda: self.set_designer_mode("NFA"))
+
         toolbar = QFrame()
         toolbar.setStyleSheet(self.panel_style())
         toolbar_layout = QHBoxLayout(toolbar)
@@ -634,51 +656,35 @@ class MainWindow(QMainWindow):
         self.add_btn = QPushButton()
         self.edge_btn = QPushButton()
         self.edge_btn.setCheckable(True)
-        self.dfa_mode_btn = QPushButton()
-        self.dfa_mode_btn.setCheckable(True)
-        self.nfa_mode_btn = QPushButton()
-        self.nfa_mode_btn.setCheckable(True)
         self.start_btn = QPushButton()
         self.final_btn = QPushButton()
         self.delete_btn = QPushButton()
         self.delete_transition_btn = QPushButton()
-        self.import_nfa_btn = QPushButton()
-        self.designer_convert_btn = QPushButton()
+        self.clear_design_btn = QPushButton()
 
         self.add_btn.clicked.connect(self.create_state)
         self.edge_btn.toggled.connect(self._set_edge_mode)
-        self.dfa_mode_btn.clicked.connect(lambda: self.set_designer_mode("DFA"))
-        self.nfa_mode_btn.clicked.connect(lambda: self.set_designer_mode("NFA"))
         self.start_btn.clicked.connect(self.set_start)
         self.final_btn.clicked.connect(self.toggle_final)
         self.delete_btn.clicked.connect(self.delete_state)
         self.delete_transition_btn.clicked.connect(self.delete_transition)
-        self.import_nfa_btn.clicked.connect(self.import_nfa_text)
-        self.designer_convert_btn.clicked.connect(self.convert_designer_machine)
+        self.clear_design_btn.clicked.connect(self.clear_designer)
 
         for button in (
-            self.add_btn,
-            self.edge_btn,
-            self.dfa_mode_btn,
-            self.nfa_mode_btn,
-            self.start_btn,
-            self.final_btn,
-            self.delete_btn,
-            self.delete_transition_btn,
-            self.import_nfa_btn,
-            self.designer_convert_btn,
+            self.add_btn, self.edge_btn, self.start_btn, self.final_btn,
+            self.delete_btn, self.delete_transition_btn, self.clear_design_btn
         ):
             toolbar_layout.addWidget(button)
 
         layout.addWidget(toolbar)
 
         self.design_graph = GraphView(editable=True)
-        self.design_graph.set_mode("DFA")
         self.design_graph.state_clicked.connect(self._select_state)
         self.design_graph.changed.connect(self._refresh_views)
         layout.addWidget(self.design_graph, 1)
 
         self.hint = QLabel()
+        self.hint.setStyleSheet("color:#8995a8;padding:5px;")
         layout.addWidget(self.hint)
 
         return page
@@ -972,107 +978,41 @@ class MainWindow(QMainWindow):
     # Automata designer actions
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _create_empty_machine(deterministic=True):
+        return FiniteAutomaton(
+            states=[],
+            alphabet=[],
+            transitions=[],
+            start=None,
+            finals=set(),
+        )
+
     def set_designer_mode(self, mode):
-        """Switch the drawing rules between DFA and NFA."""
+        """Select an independent DFA or NFA drawing workspace."""
         mode = "NFA" if str(mode).upper() == "NFA" else "DFA"
-        if mode == "DFA" and not self.machine.is_deterministic():
-            reply = QMessageBox.question(
-                self,"Convert NFA to DFA",
-                "The current machine is an NFA. Convert it to a DFA before switching to DFA mode?"
-            )
-            if reply != QMessageBox.StandardButton.Yes:
-                self.nfa_mode_btn.setChecked(True)
-                self.dfa_mode_btn.setChecked(False)
-                return
-            self.machine = self.machine.to_dfa()
-            self.current = self.machine.start
-            self.path = [self.current]
-            self.input_index = 0
-            self.simulation_history = []
-            self.simulation_active_edges = set()
+        self._designer_mode = mode
+
+        # Mode switching intentionally starts a clean design. Conversion is
+        # kept exclusively in the NFA → DFA page.
+        self.machine = self._create_empty_machine()
+        self.current = None
+        self.path = []
+        self.input_index = 0
+        self.simulation_active_edges = set()
+        self.simulation_history = []
+
         self.design_graph.set_mode(mode)
-        self.dfa_mode_btn.setChecked(mode == "DFA")
-        self.nfa_mode_btn.setChecked(mode == "NFA")
+        self.design_graph.positions.clear()
+        self.design_graph.selected = None
+        self.design_graph.edge_source = None
+        self.edge_btn.setChecked(False)
         self._refresh_views()
 
-    def convert_designer_machine(self):
-        """Convert the designed NFA to a DFA and keep it in Designer."""
-        if self.machine.is_deterministic():
-            QMessageBox.information(self,"NFA → DFA","The current machine is already a DFA.")
-            self.set_designer_mode("DFA")
-            return
-        try:
-            self.machine = self.machine.to_dfa()
-            self.current = self.machine.start
-            self.path = [self.current]
-            self.input_index = 0
-            self.simulation_history = []
-            self.simulation_active_edges = set()
-            self.design_graph.selected = None
-            self.set_designer_mode("DFA")
-        except Exception as error:
-            QMessageBox.warning(self,"Conversion",str(error))
+    def clear_designer(self):
+        """Clear the current design while keeping its selected mode."""
+        self.set_designer_mode(getattr(self, "_designer_mode", "DFA"))
 
-    def load_conversion_source(self):
-        """Copy the current Designer machine into the conversion workspace."""
-        self.convert_source_graph.set_automaton(self.machine,self.machine.start)
-        self.convert_source_title.setText(
-            ("Source: " if self.lang=="en" else "ورودی: ")
-            + ("DFA" if self.machine.is_deterministic() else "NFA")
-        )
-        self.convert_graph.set_automaton(None)
-        self.convert_info.clear()
-        self.auto_layout_conversion_graphs()
-
-    def _layout_graph(self, graph):
-        """Arrange a graph without changing its automaton."""
-        automaton=graph.automaton
-        if not automaton or not automaton.states:return
-        width=max(graph.width(),500); height=max(graph.height(),420)
-        margin_x=80; usable_width=max(width-2*margin_x,300)
-        column_count=max(1,math.ceil(math.sqrt(len(automaton.states))))
-        columns=[automaton.states[i:i+column_count] for i in range(0,len(automaton.states),column_count)]
-        graph.positions={}
-        for ci,column in enumerate(columns):
-            x=margin_x+usable_width*ci/max(len(columns)-1,1)
-            if len(columns)==1:x=width/2
-            spacing=height/(len(column)+1)
-            for ri,state in enumerate(column):
-                graph.positions[state]=QPointF(x,spacing*(ri+1))
-        graph.update()
-
-    def auto_layout_conversion_graphs(self):
-        self._layout_graph(self.convert_source_graph)
-        self._layout_graph(self.convert_graph)
-
-    def auto_layout_converted_dfa(self):
-        self.auto_layout_conversion_graphs()
-
-    def convert_nfa(self):
-        """Convert the source graph to a DFA using subset construction."""
-        try:
-            source=self.convert_source_graph.automaton
-            if not source:
-                self.load_conversion_source()
-                source=self.convert_source_graph.automaton
-            dfa=source.clone() if source.is_deterministic() else source.to_dfa()
-            self.convert_graph.set_automaton(dfa,dfa.start)
-            self._layout_graph(self.convert_graph)
-            lines=[
-                "Source is already a DFA; a copy is shown as the result." if source.is_deterministic() else "DFA created by subset construction.",
-                "",
-                f"States: {', '.join(dfa.states)}",
-                f"Alphabet: {', '.join(dfa.alphabet)}",
-                f"Start: {dfa.start}",
-                f"Final: {', '.join(sorted(dfa.finals)) or '—'}",
-                "",
-                "Transitions:"
-            ]
-            lines.extend(f"{t.source} --{t.symbol} --> {t.target}" for t in dfa.transitions)
-            self.convert_info.setPlainText("\n".join(lines))
-            self.convert_result_title.setText("Result: DFA" if self.lang=="en" else "خروجی: DFA")
-        except Exception as error:
-            QMessageBox.warning(self,"Conversion",str(error))
 
     def _set_edge_mode(self, enabled):
         self.design_graph.edge_mode = enabled
@@ -1118,46 +1058,6 @@ class MainWindow(QMainWindow):
         self.input_index = 0
         self._refresh_views()
 
-    def import_nfa_text(self):
-        """Import an automaton from a compact, copy/paste-friendly text format."""
-        example = (
-            "states=q0,q1,q2; alphabet=a,b; start=q0; finals=q2; "
-            "transitions=q0,a,q0|q0,a,q1|q0,b,q0|q1,b,q2|q2,a,q2|q2,b,q2"
-        )
-        text, accepted = QInputDialog.getText(
-            self,
-            "Import NFA" if self.lang == "en" else "ورود NFA",
-            example,
-        )
-        if not accepted or not text.strip():
-            return
-
-        try:
-            parts = {}
-            for item in text.split(";"):
-                key, value = item.strip().split("=", 1)
-                parts[key.strip().lower()] = value.strip()
-
-            states = [x.strip() for x in parts["states"].split(",") if x.strip()]
-            alphabet = [x.strip() for x in parts["alphabet"].split(",") if x.strip()]
-            start = parts["start"].strip()
-            finals = {x.strip() for x in parts.get("finals", "").split(",") if x.strip()}
-            transitions = []
-            for item in parts.get("transitions", "").split("|"):
-                values = [x.strip() for x in item.split(",")]
-                if len(values) != 3:
-                    raise ValueError("Each transition must be: source,symbol,target")
-                transitions.append(Transition(*values))
-
-            machine = FiniteAutomaton(states, alphabet, transitions, start, finals)
-            machine.validate()
-            self.machine = machine
-            self.current = machine.start
-            self.path = [machine.start]
-            self.input_index = 0
-            self._refresh_views()
-        except Exception as error:
-            QMessageBox.warning(self, "Import NFA", str(error))
 
     def set_start(self):
         """Set the selected state as the automaton start state."""
