@@ -246,6 +246,19 @@ class FiniteAutomaton:
             return "∅"
         return "{" + ",".join(sorted(subset)) + "}"
 
+
+    def transition_tuples(self, source_states=None, symbol=None, target_states=None):
+        """Return exact transition tuples, useful for deterministic visual traces."""
+        sources = set(source_states) if source_states is not None else None
+        targets = set(target_states) if target_states is not None else None
+        return {
+            (t.source, t.symbol, t.target)
+            for t in self.transitions
+            if (sources is None or t.source in sources)
+            and (symbol is None or t.symbol == symbol)
+            and (targets is None or t.target in targets)
+        }
+
     def clone(self):
         """Return a fully independent copy of the automaton."""
         return FiniteAutomaton(
