@@ -210,36 +210,35 @@ class GraphView(QWidget):
         if not accepted or not symbol.strip():
             return
 
-        # The same input symbol may lead from one NFA state to several states.
-        # Example: q0 --a--> q0,q1
-        targets_text, accepted = QInputDialog.getText(
-            self,
-            "NFA Targets",
-            "Target state(s), comma-separated:\n"
-            f"Example: {target} or q0,q1\n"
-            f"Source: {source}",
-            text=target,
-        )
-
-        if not accepted or not targets_text.strip():
-            return
-
-        targets = [
-            item.strip()
-            for item in targets_text.replace("،", ",").split(",")
-            if item.strip()
-        ]
-
-        if not targets:
-            return
-
         if self.mode == "DFA":
-            if len(set(targets)) != 1:
-                QMessageBox.warning(self, "DFA transition", "A DFA transition must have exactly one target state.")
+            targets = [target]
+            existing = {
+                t.target for t in self.automaton.transitions
+                if t.source == source and t.symbol == symbol.strip()
+            }
+            if existing and existing != {target}:
+                QMessageBox.warning(
+                    self, "DFA transition",
+                    f"DFA already has a transition for ({source}, {symbol.strip()})."
+                )
                 return
-            existing = {t.target for t in self.automaton.transitions if t.source == source and t.symbol == symbol.strip()}
-            if existing and existing != {targets[0]}:
-                QMessageBox.warning(self, "DFA transition", f"DFA already has a transition for ({source}, {symbol.strip()}).")
+        else:
+            targets_text, accepted = QInputDialog.getText(
+                self,
+                "NFA Targets",
+                "Target state(s), comma-separated:\n"
+                f"Example: {target} or q0,q1\n"
+                f"Source: {source}",
+                text=target,
+            )
+            if not accepted or not targets_text.strip():
+                return
+            targets = [
+                item.strip()
+                for item in targets_text.replace("،", ",").split(",")
+                if item.strip()
+            ]
+            if not targets:
                 return
 
         try:
@@ -455,7 +454,8 @@ class MainWindow(QMainWindow):
         super().__init__()
 
         self.lang = "en"
-        self.machine = self._create_sample_machine()
+        self._designer_mode = "DFA"
+        self.machine = self._create_empty_machine(deterministic=True)
         self.current = self.machine.start
         self.path = [self.current]
         self.input_index = 0
@@ -1211,7 +1211,7 @@ class MainWindow(QMainWindow):
         """Refresh every visible representation of the current machine."""
         self._update_texts()
 
-        self.design_graph.set_mode("DFA" if self.machine.is_deterministic() else "NFA")
+        self.design_graph.set_mode(getattr(self, "_designer_mode", "DFA"))
         self.design_graph.set_automaton(self.machine, self.current, self.path)
         self.sim_graph.set_automaton(
             self.machine, self.current, self.path,
@@ -1787,7 +1787,7 @@ class MainWindow(QMainWindow):
         )
 
         badge = "DFA" if self.machine.is_deterministic() else "NFA"
-        self.dbadge.setText(badge)
+        self.dbadge.setText(getattr(self, "_designer_mode", badge))
         self.sbadge.setText(badge)
         self.tbadge.setText(badge)
         self.cbadge.setText(badge)
@@ -1808,16 +1808,27 @@ class MainWindow(QMainWindow):
         self.delete_transition_btn.setText(
             "حذف انتقال" if self.lang == "fa" else "Delete Transition"
         )
-        self.import_nfa_btn.setText(
-            "ورود ماشین متنی" if self.lang == "fa" else "Import Automaton from Text"
-        )
 
+        mode = getattr(self, "_designer_mode", "DFA")
         self.hint.setText(
-            "دوبارکلیک = حالت جدید • کشیدن = جابه‌جایی • "
-            "رسم انتقال = اتصال دو حالت"
+            (
+                "حالت طراحی: DFA • دوبارکلیک = حالت جدید • کشیدن = جابه‌جایی • "
+                "رسم انتقال = اتصال دو حالت • هر Symbol فقط یک مقصد دارد"
+                if mode == "DFA"
+                else
+                "حالت طراحی: NFA • دوبارکلیک = حالت جدید • کشیدن = جابه‌جایی • "
+                "رسم انتقال = اتصال دو حالت • یک Symbol می‌تواند چند مقصد داشته باشد"
+            )
             if self.lang == "fa"
-            else "Double-click = new state • Drag = move • "
-            "Draw Transition = connect states"
+            else
+            (
+                "Design mode: DFA • Double-click = new state • Drag = move • "
+                "Draw Transition = connect states • one destination per Symbol"
+                if mode == "DFA"
+                else
+                "Design mode: NFA • Double-click = new state • Drag = move • "
+                "Draw Transition = connect states • multiple destinations per Symbol"
+            )
         )
 
         self.run_btn.setText(self.tr("run"))
@@ -1836,8 +1847,9 @@ class MainWindow(QMainWindow):
             + ("DFA" if self.machine.is_deterministic() else "NFA")
         )
         self.convert_result_title.setText("Result: DFA" if self.lang=="en" else "خروجی: DFA")
-        self.dfa_mode_btn.setChecked(self.machine.is_deterministic())
-        self.nfa_mode_btn.setChecked(not self.machine.is_deterministic())
+        designer_mode = getattr(self, "_designer_mode", "DFA")
+        self.dfa_mode_btn.setChecked(designer_mode == "DFA")
+        self.nfa_mode_btn.setChecked(designer_mode == "NFA")
         self.duration_label.setText(
             "مدت هر مرحله:" if self.lang == "fa" else "Step duration:"
         )
