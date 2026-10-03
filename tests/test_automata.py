@@ -39,6 +39,26 @@ class AutomataTests(unittest.TestCase):
         self.assertEqual(dfa.destinations("∅", "1"), {"∅"})
         self.assertTrue(dfa.simulate_dfa("1")[0] is False)
 
+    def test_nfa_with_a_b_branching(self):
+        a = FiniteAutomaton(
+            ["q0", "q1", "q2"], ["a", "b"],
+            [
+                Transition("q0", "a", "q0"),
+                Transition("q0", "a", "q1"),
+                Transition("q0", "b", "q0"),
+                Transition("q1", "b", "q2"),
+                Transition("q2", "a", "q2"),
+                Transition("q2", "b", "q2"),
+            ],
+            "q0", {"q2"}
+        )
+        self.assertTrue(a.simulate_nfa("aab")[0])
+        self.assertTrue(a.simulate_nfa("bbb")[0] is False)
+        self.assertEqual(
+            a.transition_tuples({"q0"}, "a"),
+            {("q0", "a", "q0"), ("q0", "a", "q1")},
+        )
+
     def test_epsilon_nfa(self):
         a = FiniteAutomaton(
             ["q0","q1"], ["a"],
@@ -46,6 +66,9 @@ class AutomataTests(unittest.TestCase):
             "q0", {"q1"}
         )
         self.assertTrue(a.simulate_nfa("aaa")[0])
+        dfa = a.to_dfa()
+        self.assertTrue(dfa.is_deterministic())
+        self.assertTrue(dfa.simulate_dfa("aaa")[0])
 
 if __name__ == "__main__":
     unittest.main()
