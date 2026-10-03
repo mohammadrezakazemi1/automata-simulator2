@@ -279,238 +279,131 @@ class GraphView(QWidget):
         painter.drawLine(tip, right)
 
     def paintEvent(self, event):
-        """Render states, transitions, start/final markers and simulation path."""
+        """Render every logical transition separately and keep NFA branches visible."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.fillRect(self.rect(), QColor("#0f131b"))
-
         if not self.automaton or not self.automaton.states:
             painter.setPen(QColor("#64748b"))
-            painter.drawText(
-                self.rect(),
-                Qt.AlignCenter,
-                "Double-click to create a state / برای ساخت حالت دوبارکلیک کنید",
-            )
+            painter.drawText(self.rect(), Qt.AlignCenter,
+                             "Double-click to create a state / برای ساخت حالت دوبارکلیک کنید")
             return
 
-        transition_groups = {}
+        groups = {}
         for transition in self.automaton.transitions:
-            key = (transition.source, transition.target)
-            transition_groups.setdefault(key, []).append(transition)
+            groups.setdefault((transition.source, transition.target), []).append(transition)
 
-        active_transitions = set(self.active_edges)
-        if not active_transitions and self.path and self.automaton.is_deterministic():
-            active_transitions = {
-                (source, "", target)
-                for source, target in zip(self.path, self.path[1:])
-            }
         state_radius = 34
+        active_transitions = set(self.active_edges)
 
-        for (source, target), symbols in transition_groups.items():
-            flow_position = None
+        for (source, target), transitions in groups.items():
             if source not in self.positions or target not in self.positions:
                 continue
+            start, end = self.positions[source], self.positions[target]
+            count = len(transitions)
+            reverse_exists = source != target and (target, source) in groups
 
-            start = self.positions[source]
-            end = self.positions[target]
-            transition_symbols = {transition.symbol for transition in symbols}
-            active = any(
-                (source, transition_symbol, target) in active_transitions
-                or (source, "", target) in active_transitions
-                for transition_symbol in transition_symbols
-            )
+            for edge_index, transition in enumerate(transitions):
+                active = (transition.source, transition.symbol, transition.target) in active_transitions
+                painter.setPen(QPen(QColor("#b5aaff" if active else "#536174"), 3 if active else 2))
+                painter.setBrush(Qt.NoBrush)
+                flow_position = None
 
-            pen = QPen(
-                QColor("#9b8cff" if active else "#536174"),
-                3 if active else 2,
-            )
-            painter.setPen(pen)
-            painter.setBrush(Qt.NoBrush)
-
-            if source == target:
-                # Draw a curved self-loop.
-                path = QPainterPath(
-                    QPointF(start.x() - 28, start.y() - 15)
-                )
-                path.cubicTo(
-                    start.x() - 80,
-                    start.y() - 115,
-                    start.x() + 80,
-                    start.y() - 115,
-                    start.x() + 28,
-                    start.y() - 15,
-                )
-                painter.drawPath(path)
-
-                tip = QPointF(start.x() + 28, start.y() - 15)
-                self._draw_arrow(
-                    painter,
-                    tip,
-                    QPointF(tip.x() - 3, tip.y() + 14),
-                )
-                label_position = QPointF(start.x() - 10, start.y() - 92)
-            else:
-                dx = end.x() - start.x()
-                dy = end.y() - start.y()
-                distance = max(math.hypot(dx, dy), 1)
-                ux, uy = dx / distance, dy / distance
-
-                line_start = QPointF(
-                    start.x() + ux * state_radius,
-                    start.y() + uy * state_radius,
-                )
-                line_end = QPointF(
-                    end.x() - ux * state_radius,
-                    end.y() - uy * state_radius,
-                )
-
-                # If both directions exist between two states, draw two
-                # separate curved arcs. Otherwise keep a clean straight edge.
-                reverse_exists = (target, source) in transition_groups
-                if reverse_exists:
-                    bend = 34
-                    normal_x, normal_y = -uy, ux
-                    direction = 1 if source < target else -1
-                    control = QPointF(
-                        (line_start.x() + line_end.x()) / 2
-                        + normal_x * bend * direction,
-                        (line_start.y() + line_end.y()) / 2
-                        + normal_y * bend * direction,
-                    )
-                    curve = QPainterPath()
-                    curve.moveTo(line_start)
-                    curve.quadTo(control, line_end)
-                    painter.drawPath(curve)
-
-                    # Tangent near the arrow tip.
-                    tangent = QPointF(
-                        line_end.x() - control.x(),
-                        line_end.y() - control.y(),
-                    )
-                    self._draw_arrow(
-                        painter,
-                        line_end,
-                        QPointF(
-                            line_end.x() - tangent.x() * 0.18,
-                            line_end.y() - tangent.y() * 0.18,
-                        ),
-                    )
-
-                    label_position = QPointF(
-                        0.25 * line_start.x()
-                        + 0.5 * control.x()
-                        + 0.25 * line_end.x() - 10,
-                        0.25 * line_start.y()
-                        + 0.5 * control.y()
-                        + 0.25 * line_end.y() - 10,
-                    )
-
-                    if active:
-                        t = self.flow_t
-                        flow_position = QPointF(
-                            (1 - t) * (1 - t) * line_start.x()
-                            + 2 * (1 - t) * t * control.x()
-                            + t * t * line_end.x(),
-                            (1 - t) * (1 - t) * line_start.y()
-                            + 2 * (1 - t) * t * control.y()
-                            + t * t * line_end.y(),
-                        )
-                else:
-                    painter.drawLine(line_start, line_end)
-                    self._draw_arrow(
-                        painter,
-                        line_end,
-                        QPointF(
-                            line_end.x() - ux * 12 + uy * 7,
-                            line_end.y() - uy * 12 - ux * 7,
-                        ),
-                    )
-
-                    label_position = QPointF(
-                        (line_start.x() + line_end.x()) / 2 - 10,
-                        (line_start.y() + line_end.y()) / 2 - 10,
-                    )
-
-                    if active:
-                        t = self.flow_t
-                        flow_position = QPointF(
-                            line_start.x() + (line_end.x() - line_start.x()) * t,
-                            line_start.y() + (line_end.y() - line_start.y()) * t,
-                        )
-
-            painter.setPen(QColor("#d7dced"))
-            painter.setFont(QFont("Segoe UI", 10, QFont.Bold))
-            label = ", ".join(
-                f"{transition.symbol}"
-                for transition in symbols
-            )
-            painter.drawText(label_position, label)
-
-            if active:
-                # Animated dot shows the direction of the current transition.
-                # Curved bidirectional edges already calculate their own
-                # flow_position; self-loops use the fixed loop position.
                 if source == target:
-                    flow_position = QPointF(start.x(), start.y() - 70)
-                elif flow_position is None:
-                    t = self.flow_t
-                    flow_position = QPointF(
-                        start.x() + (end.x() - start.x()) * t,
-                        start.y() + (end.y() - start.y()) * t,
-                    )
+                    spread = edge_index - (count - 1) / 2
+                    top = start.y() - 74 - 18 * abs(spread)
+                    left = start.x() - 30 - 12 * spread
+                    right = start.x() + 30 - 12 * spread
+                    loop = QPainterPath(QPointF(left, start.y() - 15))
+                    loop.cubicTo(left - 45, top - 35, right + 45, top - 35,
+                                 right, start.y() - 15)
+                    painter.drawPath(loop)
+                    tip = QPointF(right, start.y() - 15)
+                    self._draw_arrow(painter, tip, QPointF(tip.x() - 3, tip.y() + 14))
+                    label_position = QPointF((left + right) / 2 - 10, top - 12)
+                    if active:
+                        flow_position = QPointF((left + right) / 2, top + 2)
+                else:
+                    dx, dy = end.x() - start.x(), end.y() - start.y()
+                    distance = max(math.hypot(dx, dy), 1)
+                    ux, uy = dx / distance, dy / distance
+                    line_start = QPointF(start.x() + ux * state_radius, start.y() + uy * state_radius)
+                    line_end = QPointF(end.x() - ux * state_radius, end.y() - uy * state_radius)
 
-                painter.setPen(Qt.NoPen)
-                painter.setBrush(QBrush(QColor("#d9d3ff")))
-                painter.drawEllipse(flow_position, 5, 5)
+                    normal_x, normal_y = -uy, ux
+                    spread = edge_index - (count - 1) / 2
+                    base_bend = 30 if reverse_exists else 0
+                    direction = 1 if source < target else -1
+                    offset = base_bend * direction + spread * 22
+
+                    if reverse_exists or count > 1:
+                        control = QPointF(
+                            (line_start.x() + line_end.x()) / 2 + normal_x * offset,
+                            (line_start.y() + line_end.y()) / 2 + normal_y * offset,
+                        )
+                        curve = QPainterPath()
+                        curve.moveTo(line_start)
+                        curve.quadTo(control, line_end)
+                        painter.drawPath(curve)
+                        tangent = QPointF(line_end.x() - control.x(), line_end.y() - control.y())
+                        self._draw_arrow(
+                            painter, line_end,
+                            QPointF(line_end.x() - tangent.x() * 0.18,
+                                    line_end.y() - tangent.y() * 0.18),
+                        )
+                        label_position = QPointF(
+                            .25 * line_start.x() + .5 * control.x() + .25 * line_end.x() - 10,
+                            .25 * line_start.y() + .5 * control.y() + .25 * line_end.y() - 10,
+                        )
+                        if active:
+                            t = self.flow_t
+                            flow_position = QPointF(
+                                (1-t)**2 * line_start.x() + 2*(1-t)*t*control.x() + t**2*line_end.x(),
+                                (1-t)**2 * line_start.y() + 2*(1-t)*t*control.y() + t**2*line_end.y(),
+                            )
+                    else:
+                        painter.drawLine(line_start, line_end)
+                        self._draw_arrow(
+                            painter, line_end,
+                            QPointF(line_end.x() - ux*12 + uy*7,
+                                    line_end.y() - uy*12 - ux*7),
+                        )
+                        label_position = QPointF(
+                            (line_start.x() + line_end.x()) / 2 - 10,
+                            (line_start.y() + line_end.y()) / 2 - 10,
+                        )
+                        if active:
+                            t = self.flow_t
+                            flow_position = QPointF(
+                                line_start.x() + (line_end.x() - line_start.x()) * t,
+                                line_start.y() + (line_end.y() - line_start.y()) * t,
+                            )
+
+                painter.setPen(QColor("#d7dced"))
+                painter.setFont(QFont("Segoe UI", 10, QFont.Bold))
+                painter.drawText(label_position, transition.symbol)
+                if active and flow_position is not None:
+                    painter.setPen(Qt.NoPen)
+                    painter.setBrush(QBrush(QColor("#d9d3ff")))
+                    painter.drawEllipse(flow_position, 5, 5)
 
         for state, position in self.positions.items():
-            selected = state == self.selected
-            active = state == self.active
-            highlighted = selected or active
-
-            painter.setPen(
-                QPen(
-                    QColor("#b5aaff" if highlighted else "#66758a"),
-                    3 if highlighted else 2,
-                )
-            )
+            highlighted = state == self.selected or state == self.active
+            painter.setPen(QPen(QColor("#b5aaff" if highlighted else "#66758a"), 3 if highlighted else 2))
             painter.setBrush(QBrush(QColor("#1a202c")))
             painter.drawEllipse(position, state_radius, state_radius)
-
-            # A double circle represents an accepting/final state.
             if state in self.automaton.finals:
                 painter.setBrush(Qt.NoBrush)
-                painter.drawEllipse(
-                    position,
-                    state_radius - 6,
-                    state_radius - 6,
-                )
-
+                painter.drawEllipse(position, state_radius - 6, state_radius - 6)
             painter.setPen(QColor("#f8fafc"))
             painter.setFont(QFont("Segoe UI", 11, QFont.Bold))
-            painter.drawText(
-                position.x() - 30,
-                position.y() - 10,
-                60,
-                20,
-                Qt.AlignCenter,
-                state,
-            )
-
-            # Incoming arrow marks the start state.
+            painter.drawText(position.x()-30, position.y()-10, 60, 20, Qt.AlignCenter, state)
             if state == self.automaton.start:
-                pen = QPen(QColor("#66758a"), 2)
-                painter.setPen(pen)
-                painter.drawLine(
-                    position.x() - 70,
-                    position.y(),
-                    position.x() - state_radius,
-                    position.y(),
-                )
+                painter.setPen(QPen(QColor("#66758a"), 2))
+                painter.drawLine(position.x()-70, position.y(), position.x()-state_radius, position.y())
                 self._draw_arrow(
-                    painter,
-                    QPointF(position.x() - state_radius, position.y()),
-                    QPointF(position.x() - state_radius - 10, position.y() - 5),
+                    painter, QPointF(position.x()-state_radius, position.y()),
+                    QPointF(position.x()-state_radius-10, position.y()-5),
                 )
 
 
@@ -748,6 +641,7 @@ class MainWindow(QMainWindow):
         self.start_btn = QPushButton()
         self.final_btn = QPushButton()
         self.delete_btn = QPushButton()
+        self.delete_transition_btn = QPushButton()
         self.import_nfa_btn = QPushButton()
         self.designer_convert_btn = QPushButton()
 
@@ -758,6 +652,7 @@ class MainWindow(QMainWindow):
         self.start_btn.clicked.connect(self.set_start)
         self.final_btn.clicked.connect(self.toggle_final)
         self.delete_btn.clicked.connect(self.delete_state)
+        self.delete_transition_btn.clicked.connect(self.delete_transition)
         self.import_nfa_btn.clicked.connect(self.import_nfa_text)
         self.designer_convert_btn.clicked.connect(self.convert_designer_machine)
 
@@ -769,6 +664,7 @@ class MainWindow(QMainWindow):
             self.start_btn,
             self.final_btn,
             self.delete_btn,
+            self.delete_transition_btn,
             self.import_nfa_btn,
             self.designer_convert_btn,
         ):
@@ -1286,6 +1182,27 @@ class MainWindow(QMainWindow):
             self.design_graph.selected = None
             self._refresh_views()
 
+    def delete_transition(self):
+        """Delete one exact transition chosen from the current machine."""
+        if not self.machine.transitions:
+            QMessageBox.information(
+                self,
+                "Delete transition" if self.lang == "en" else "حذف انتقال",
+                "No transitions exist." if self.lang == "en" else "هیچ انتقالی وجود ندارد.",
+            )
+            return
+        labels = [f"{t.source} --{t.symbol}--> {t.target}" for t in self.machine.transitions]
+        selected, accepted = QInputDialog.getItem(
+            self,
+            "Delete transition" if self.lang == "en" else "حذف انتقال",
+            "Select a transition:" if self.lang == "en" else "یک انتقال را انتخاب کنید:",
+            labels, 0, False,
+        )
+        if not accepted:
+            return
+        del self.machine.transitions[labels.index(selected)]
+        self._refresh_views()
+
     # ------------------------------------------------------------------
     # Shared refresh / table logic
     # ------------------------------------------------------------------
@@ -1405,11 +1322,14 @@ class MainWindow(QMainWindow):
                     )
 
             self.run_timer.stop()
-            self.current = self.machine.start
             self.input_index = 0
-            self.path = [self.current]
             self.simulation_active_edges = set()
             self.simulation_history = []
+            if self.machine.is_deterministic():
+                self.current = self.machine.start
+            else:
+                self.current = "{" + ",".join(sorted(self.machine.epsilon_closure({self.machine.start}))) + "}"
+            self.path = [self.current]
             self._refresh_views()
 
             if not text:
@@ -1486,7 +1406,10 @@ class MainWindow(QMainWindow):
             text = self.input.text().strip()
 
             if self.input_index == 0:
-                self.current = self.machine.start
+                if self.machine.is_deterministic():
+                    self.current = self.machine.start
+                else:
+                    self.current = "{" + ",".join(sorted(self.machine.epsilon_closure({self.machine.start}))) + "}"
                 self.path = [self.current]
                 self.simulation_active_edges = set()
                 self.simulation_history = []
