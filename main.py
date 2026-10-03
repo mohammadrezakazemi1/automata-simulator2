@@ -1268,6 +1268,24 @@ class MainWindow(QMainWindow):
         if hasattr(self, "run_timer"):
             self.run_timer.setInterval(self.duration_spin.value() * 1000)
 
+    def _epsilon_closure_with_edges(self, states):
+        """Return ε-closure plus the exact ε-transitions used to reach it."""
+        closure = set(states)
+        stack = list(states)
+        edges = set()
+        while stack:
+            current = stack.pop()
+            for transition in self.machine.transitions:
+                if transition.source == current and transition.symbol == "ε":
+                    edges.add((transition.source, transition.symbol, transition.target))
+                    if transition.target not in closure:
+                        closure.add(transition.target)
+                        stack.append(transition.target)
+        return closure, edges
+
+    def _nfa_state_label(self, states):
+        return "{" + ",".join(sorted(states)) + "}"
+
     def _exact_transitions_for_step(self, source_states, symbol, target_states):
         """Return exact input-symbol transitions used by this simulation step."""
         return {
@@ -1328,12 +1346,16 @@ class MainWindow(QMainWindow):
             if self.machine.is_deterministic():
                 self.current = self.machine.start
             else:
-                self.current = "{" + ",".join(sorted(self.machine.epsilon_closure({self.machine.start}))) + "}"
+                self.current = self._nfa_state_label(self.machine.epsilon_closure({self.machine.start}))
             self.path = [self.current]
             self._refresh_views()
 
             if not text:
-                accepted = self.current in self.machine.finals
+                accepted = (
+                    self.current in self.machine.finals
+                    if self.machine.is_deterministic()
+                    else bool(self._path_state_set(self.current) & self.machine.finals)
+                )
                 result = self.tr("accepted") if accepted else self.tr("rejected")
                 self.status.setText(f"{self.tr('result')}: {result}")
                 return
@@ -1366,15 +1388,13 @@ class MainWindow(QMainWindow):
             self.simulation_history.append(set(self.simulation_active_edges))
         else:
             previous_states = set(self._path_state_set(previous))
-            next_states = self.machine.epsilon_closure(
-                self.machine.move(previous_states, symbol)
-            )
-            self.current = "{" + ",".join(sorted(next_states)) + "}"
+            moved_states = self.machine.move(previous_states, symbol)
+            next_states, epsilon_edges = self._epsilon_closure_with_edges(moved_states)
+            self.current = self._nfa_state_label(next_states)
             self.path.append(self.current)
-            self.simulation_active_edges = self._exact_transitions_for_step(
-                previous_states,
-                symbol,
-                next_states,
+            self.simulation_active_edges = (
+                self._exact_transitions_for_step(previous_states, symbol, next_states)
+                | epsilon_edges
             )
             self.simulation_history.append(set(self.simulation_active_edges))
 
@@ -1409,7 +1429,7 @@ class MainWindow(QMainWindow):
                 if self.machine.is_deterministic():
                     self.current = self.machine.start
                 else:
-                    self.current = "{" + ",".join(sorted(self.machine.epsilon_closure({self.machine.start}))) + "}"
+                    self.current = self._nfa_state_label(self.machine.epsilon_closure({self.machine.start}))
                 self.path = [self.current]
                 self.simulation_active_edges = set()
                 self.simulation_history = []
@@ -1511,11 +1531,16 @@ class MainWindow(QMainWindow):
 
     def reset_simulation(self):
         """Return the simulator to the start state."""
-        self.current = self.machine.start
         self.input_index = 0
-        self.path = [self.current]
         self.simulation_active_edges = set()
         self.simulation_history = []
+        if self.machine.is_deterministic():
+            self.current = self.machine.start
+        else:
+            self.current = self._nfa_state_label(
+                self.machine.epsilon_closure({self.machine.start})
+            )
+        self.path = [self.current]
         self._refresh_views()
 
     def auto_layout_converted_dfa(self):
@@ -1779,6 +1804,9 @@ class MainWindow(QMainWindow):
         )
         self.delete_btn.setText(
             "حذف حالت" if self.lang == "fa" else "Delete State"
+        )
+        self.delete_transition_btn.setText(
+            "حذف انتقال" if self.lang == "fa" else "Delete Transition"
         )
         self.import_nfa_btn.setText(
             "ورود ماشین متنی" if self.lang == "fa" else "Import Automaton from Text"
