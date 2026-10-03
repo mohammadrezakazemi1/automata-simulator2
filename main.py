@@ -1592,6 +1592,7 @@ class MainWindow(QMainWindow):
         self.input_index = 0
         self.path = [self.current]
         self.simulation_active_edges = set()
+        self.simulation_history = []
         self._refresh_views()
 
     def auto_layout_converted_dfa(self):
@@ -1884,6 +1885,8 @@ class MainWindow(QMainWindow):
             + ("DFA" if self.machine.is_deterministic() else "NFA")
         )
         self.convert_result_title.setText("Result: DFA" if self.lang=="en" else "خروجی: DFA")
+        self.dfa_mode_btn.setChecked(self.machine.is_deterministic())
+        self.nfa_mode_btn.setChecked(not self.machine.is_deterministic())
         self.duration_label.setText(
             "مدت هر مرحله:" if self.lang == "fa" else "Step duration:"
         )
